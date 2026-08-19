@@ -1,0 +1,36 @@
+[package]
+name = "rc_cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rc"
+path = "src/main.rs"
+
+[dependencies]
+# Internal workspace crates
+cry_core.workspace = true
+cry_pak.workspace = true
+cry_xml.workspace = true
+cry_asset.workspace = true
+cry_image.workspace = true
+cry_mesh.workspace = true
+cry_model.workspace = true
+cry_alembic.workspace = true
+cry_substance.workspace = true
+
+# External utilities
+clap.workspace = true
+rayon.workspace = true
+filetime.workspace = true
+quick-xml.workspace = true
+image.workspace = true
+byteorder.workspace = true
+
+# Modern UI Toolkit for CryTIF Interactive Settings Window (Lightweight FemtoVG Backend)
+slint = { version = "1.17.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg"] }
+
+[build-dependencies]
+winres = "0.1.12"
+slint-build = "1.17.1"

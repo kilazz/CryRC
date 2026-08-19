@@ -1,0 +1,68 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cry_core",
+    "crates/cry_pak",
+    "crates/cry_xml",
+    "crates/cry_asset",
+    "crates/cry_image",
+    "crates/cry_mesh",
+    "crates/cry_model",
+    "crates/cry_alembic",
+    "crates/cry_substance",
+    "crates/cry_tif_plugin",
+    "crates/rc_cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+authors = ["Crytek GmbH / Crytek Group", "CryEngine Rust Team"]
+license = "Proprietary"
+
+[workspace.dependencies]
+# CLI, Concurrency & Benchmarking
+clap = { version = "4.6.6", features = ["derive", "cargo"] }
+rayon = "1.12.0"
+criterion = { version = "0.8.2", default-features = false }
+
+# Serialization & XML Parsing
+serde = { version = "1.0.151", features = ["derive"] }
+serde_json = "1.0.151"
+quick-xml = "0.41.0"
+
+# Binary Math, Endianness & Compression
+byteorder = "1.5.0"
+crc32fast = "1.5.0"
+half = { version = "2.7.1", features = ["num-traits"] }
+flate2 = "1.1.9"
+lz4_flex = "0.14.0"
+md5 = "0.8.1"
+thiserror = "2.0.20"
+
+# Image Codecs & File Timestamps
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "tiff", "bmp", "tga", "dds"] }
+filetime = "0.2.29"
+
+# Internal Workspace Crates
+cry_core = { path = "crates/cry_core" }
+cry_pak = { path = "crates/cry_pak" }
+cry_xml = { path = "crates/cry_xml" }
+cry_asset = { path = "crates/cry_asset" }
+cry_image = { path = "crates/cry_image" }
+cry_mesh = { path = "crates/cry_mesh" }
+cry_model = { path = "crates/cry_model" }
+cry_alembic = { path = "crates/cry_alembic" }
+cry_substance = { path = "crates/cry_substance" }
+cry_tif_plugin = { path = "crates/cry_tif_plugin" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
+debug = true

@@ -1,0 +1,60 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// Centered High-Contrast Custom Controls
+
+import { Theme } from "theme.slint";
+import { SvgCheck } from "icons.slint";
+
+export component CustomCheckBox inherits Rectangle {
+    in property <string> text: "";
+    in-out property <bool> checked: false;
+    callback toggled(bool);
+
+    height: 24px;
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+
+        // Vertically Centered Checkbox Box
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: root.checked ? Theme.accent : Theme.border;
+                background: root.checked ? Theme.accent : Theme.card-alt;
+
+                if root.checked: VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+                        SvgCheck {
+                            icon-color: #ffffff;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Vertically Centered Label Text
+        Text {
+            text: root.text;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: "Segoe UI";
+            color: Theme.text-main;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+        mouse-cursor: pointer;
+    }
+}

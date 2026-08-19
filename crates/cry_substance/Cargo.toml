@@ -1,0 +1,12 @@
+[package]
+name = "cry_substance"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cry_core.workspace = true
+image.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+quick-xml.workspace = true

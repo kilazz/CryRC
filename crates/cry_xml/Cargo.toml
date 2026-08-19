@@ -1,0 +1,11 @@
+[package]
+name = "cry_xml"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cry_core.workspace = true
+quick-xml.workspace = true
+byteorder.workspace = true
+thiserror.workspace = true

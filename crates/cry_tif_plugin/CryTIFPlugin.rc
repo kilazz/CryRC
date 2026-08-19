@@ -1,0 +1,71 @@
+// Microsoft Visual C++ generated resource script.
+// CryTIF Photoshop Plugin Resource Definition
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include <windows.h>
+#undef APSTUDIO_READONLY_SYMBOLS
+
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Photoshop Plugin Property List (PiPL) Resource
+//
+16000 PiPL DISCARDABLE
+BEGIN
+    1,  // First byte (Photoshop marker)
+    0L, // kCurrentPiPLVersion
+    7L, // Property count
+    // Kind: '8BIF' (Image Format module)
+    "MIB8", "dnik", 0L, 4L, "FIB8",
+    // Name: "CryTIF" (Pascal string: length 6 + "CryTIF" + 1 null = 8 bytes)
+    "MIB8", "eman", 0L, 8L, "\006CryTIF\0",
+    // Version: 1.0
+    "MIB8", "srev", 0L, 4L, 0x0000, 0x0001,
+    // CodeWin64X86: "PluginMain" (12 bytes padded)
+    "MIB8", "4668", 0L, 12L, "PluginMain\0\0",
+    // Supported Modes: Bitmap, Gray, Indexed, RGB, CMYK, Multichannel, Duotone, Lab
+    "MIB8", "edom", 0L, 4L, 0x008B, 0x0000,
+    // Format Flags: CanRead, CanWrite, SavesImageResources
+    "MIB8", "ftmf", 0L, 4L, 0x000F, 0x0000,
+    // Read/Write Extensions: "TIF "
+    "MIB8", "xEdR", 0L, 4L, " FIT"
+END
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version Information
+//
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Crytek GmbH / Crytek Group"
+            VALUE "FileDescription", "Crytek CryTIF File Format Plugin (Pure Rust)"
+            VALUE "FileVersion", "1.2.0.0"
+            VALUE "InternalName", "CryTIFPlugin"
+            VALUE "LegalCopyright", "Copyright (C) 2004-2026 Crytek GmbH"
+            VALUE "OriginalFilename", "CryTIFPlugin.8bi"
+            VALUE "ProductName", "CryEngine Resource Compiler"
+            VALUE "ProductVersion", "1.2.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

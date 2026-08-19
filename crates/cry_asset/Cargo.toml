@@ -1,0 +1,9 @@
+[package]
+name = "cry_asset"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cry_core.workspace = true
+quick-xml.workspace = true

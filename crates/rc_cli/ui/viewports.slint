@@ -1,0 +1,68 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// Texture Viewport with Strict 50/50 Equal Sizing & Pixel-Perfect Canvas
+
+import { Theme } from "theme.slint";
+
+export component TextureViewport inherits Rectangle {
+    in property <string> title: "Viewport";
+    in property <string> info: "";
+    in property <image> preview;
+    in property <bool> bilinear-filter: true;
+
+    horizontal-stretch: 1;
+    min-width: 0px; // Enforces strictly equal 50%/50% width split
+    vertical-stretch: 1;
+    background: Theme.card;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 6px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 4px;
+
+        // Viewport Header Info with Elide to prevent layout displacement
+        HorizontalLayout {
+            alignment: space-between;
+            height: 18px;
+
+            Text {
+                text: root.title;
+                font-size: 11px;
+                font-weight: 700;
+                font-family: "Segoe UI";
+                color: Theme.text-main;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.info;
+                font-size: 10px;
+                font-family: "Segoe UI";
+                color: Theme.text-muted;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // Texture Canvas Area
+        Rectangle {
+            vertical-stretch: 1;
+            background: #141518;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            clip: true;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.preview;
+                image-fit: contain;
+                image-rendering: (root.bilinear-filter) ? smooth : pixelated;
+            }
+        }
+    }
+}

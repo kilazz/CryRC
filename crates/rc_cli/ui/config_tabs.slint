@@ -1,0 +1,1107 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// Complete Inspector Tabs with Next-Gen Filtering & RDO Controls
+
+import { Theme } from "theme.slint";
+import { CustomCheckBox } from "controls.slint";
+import { ComboBox, Slider } from "std-widgets.slint";
+
+export component ConfigTabs inherits Rectangle {
+    in-out property <int> active-tab: 0;
+
+    // Tab 1: Resolution & Streaming
+    in-out property <bool> suppress-engine-reduce: false;
+    in-out property <bool> split-streaming: false;
+    in-out property <int> persistent-mips-index: 2;
+    in-out property <int> max-size-index: 0;
+    in-out property <int> selected-platform-idx: 0;
+    in property <string> pc-res-info: "2048 x 2048 (BC1)";
+    in property <string> ps4-res-info: "2048 x 2048 (BC1)";
+    in property <string> xbox-res-info: "2048 x 2048 (BC1)";
+    in property <string> mobile-res-info: "1024 x 1024 (ETC2)";
+
+    // Tab 2: MIP Control
+    in-out property <bool> generate-mips: true;
+    in-out property <bool> maintain-alpha-coverage: false;
+    in-out property <int> mip-filter-index: 0;
+    in-out property <float> mip1-adjust: 50.0;
+    in-out property <float> mip2-adjust: 50.0;
+    in-out property <float> mip3-adjust: 50.0;
+    in-out property <float> mip4-adjust: 50.0;
+    in-out property <float> mip5-adjust: 50.0;
+    in-out property <float> mip6-adjust: 50.0;
+
+    // Tab 3: RGB to Normal
+    in-out property <int> rgb-bump-type: 1;
+    in-out property <float> rgb-bump-strength: 5.0;
+    in-out property <float> rgb-bump-blur: 0.0;
+    in-out property <bool> rgb-bump-invert: false;
+
+    // Tab 4: A to Normal
+    in-out property <int> alpha-bump-type: 0;
+    in-out property <float> alpha-bump-strength: 5.0;
+    in-out property <float> alpha-bump-blur: 0.0;
+    in-out property <bool> alpha-bump-invert: false;
+
+    // Tab 5: RDO & Compression Quality
+    in-out property <float> rdo-lambda: 0.0;
+    in-out property <bool> rdo-ultrasmooth: true;
+    in-out property <int> rdo-lookback-index: 2;
+    in-out property <int> quality-index: 2;
+    in-out property <int> colorspace-index: 0;
+    in-out property <int> format-override-index: 0;
+    in-out property <bool> dither: false;
+    in-out property <bool> discard-alpha: false;
+
+    callback settings-changed();
+    callback higher-res-clicked(int);
+    callback lower-res-clicked(int);
+
+    background: Theme.card;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 6px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 6px;
+
+        // 5-Tab Segmented Header
+        Rectangle {
+            height: 28px;
+            background: Theme.card-alt;
+            border-radius: 4px;
+
+            HorizontalLayout {
+                padding: 2px;
+                spacing: 2px;
+
+                // Tab 0: Resolution
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: (root.active-tab == 0) ? Theme.card : transparent;
+                    border-radius: 3px;
+                    border-width: (root.active-tab == 0) ? 1px : 0px;
+                    border-color: Theme.border;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Resolution";
+                            font-size: 10px;
+                            font-weight: (root.active-tab == 0) ? 700 : 500;
+                            font-family: "Segoe UI";
+                            color: (root.active-tab == 0) ? Theme.text-main : Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.active-tab = 0; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Tab 1: MIP Control
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: (root.active-tab == 1) ? Theme.card : transparent;
+                    border-radius: 3px;
+                    border-width: (root.active-tab == 1) ? 1px : 0px;
+                    border-color: Theme.border;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "MIPs";
+                            font-size: 10px;
+                            font-weight: (root.active-tab == 1) ? 700 : 500;
+                            font-family: "Segoe UI";
+                            color: (root.active-tab == 1) ? Theme.text-main : Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.active-tab = 1; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Tab 2: RGB to Normal
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: (root.active-tab == 2) ? Theme.card : transparent;
+                    border-radius: 3px;
+                    border-width: (root.active-tab == 2) ? 1px : 0px;
+                    border-color: Theme.border;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "RGB2Normal";
+                            font-size: 10px;
+                            font-weight: (root.active-tab == 2) ? 700 : 500;
+                            font-family: "Segoe UI";
+                            color: (root.active-tab == 2) ? Theme.text-main : Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.active-tab = 2; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Tab 3: A to Normal
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: (root.active-tab == 3) ? Theme.card : transparent;
+                    border-radius: 3px;
+                    border-width: (root.active-tab == 3) ? 1px : 0px;
+                    border-color: Theme.border;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "A2Normal";
+                            font-size: 10px;
+                            font-weight: (root.active-tab == 3) ? 700 : 500;
+                            font-family: "Segoe UI";
+                            color: (root.active-tab == 3) ? Theme.text-main : Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.active-tab = 3; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Tab 4: RDO & Quality
+                Rectangle {
+                    horizontal-stretch: 1.2;
+                    background: (root.active-tab == 4) ? Theme.card : transparent;
+                    border-radius: 3px;
+                    border-width: (root.active-tab == 4) ? 1px : 0px;
+                    border-color: Theme.border;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "RDO & Quality";
+                            font-size: 10px;
+                            font-weight: (root.active-tab == 4) ? 700 : 500;
+                            font-family: "Segoe UI";
+                            color: (root.active-tab == 4) ? Theme.accent : Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.active-tab = 4; }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+
+        // =====================================================================
+        // TAB 0: Resolution & Platforms
+        // =====================================================================
+        if root.active-tab == 0: VerticalLayout {
+            padding: 8px;
+            spacing: 6px;
+
+            CustomCheckBox {
+                text: "Suppress engine reduce";
+                checked <=> root.suppress-engine-reduce;
+                toggled => { root.settings-changed(); }
+            }
+
+            CustomCheckBox {
+                text: "Split for streaming (.dds.1, .2)";
+                checked <=> root.split-streaming;
+                toggled => { root.settings-changed(); }
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Max Size:";
+                    font-size: 10px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                    width: 65px;
+                }
+
+                ComboBox {
+                    model: ["Auto (No limit)", "4096", "2048", "1024", "512", "256"];
+                    current-index <=> root.max-size-index;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "Platform Resolutions:";
+                    font-size: 11px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Rectangle {
+                        width: 55px;
+                        height: 22px;
+                        background: Theme.btn-bg;
+                        border-radius: 3px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "+ Higher";
+                                font-size: 9px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        TouchArea {
+                            clicked => { root.higher-res-clicked(root.selected-platform-idx); }
+                            mouse-cursor: pointer;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 55px;
+                        height: 22px;
+                        background: Theme.btn-bg;
+                        border-radius: 3px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "- Lower";
+                                font-size: 9px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        TouchArea {
+                            clicked => { root.lower-res-clicked(root.selected-platform-idx); }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                }
+            }
+
+            // Clickable Platform Rows
+            VerticalLayout {
+                spacing: 4px;
+
+                // 0: PC
+                Rectangle {
+                    height: 28px;
+                    background: (root.selected-platform-idx == 0) ? Theme.btn-hover : Theme.card-alt;
+                    border-radius: 4px;
+                    border-width: (root.selected-platform-idx == 0) ? 1px : 0px;
+                    border-color: Theme.accent;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: space-between;
+                        Text {
+                            text: "PC";
+                            font-size: 11px;
+                            font-weight: 700;
+                            font-family: "Segoe UI";
+                            color: Theme.text-main;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.pc-res-info;
+                            font-size: 10px;
+                            font-family: "Segoe UI";
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.selected-platform-idx = 0; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // 1: PS4
+                Rectangle {
+                    height: 28px;
+                    background: (root.selected-platform-idx == 1) ? Theme.btn-hover : Theme.card-alt;
+                    border-radius: 4px;
+                    border-width: (root.selected-platform-idx == 1) ? 1px : 0px;
+                    border-color: Theme.accent;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: space-between;
+                        Text {
+                            text: "PS4";
+                            font-size: 11px;
+                            font-weight: 700;
+                            font-family: "Segoe UI";
+                            color: Theme.text-main;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.ps4-res-info;
+                            font-size: 10px;
+                            font-family: "Segoe UI";
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.selected-platform-idx = 1; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // 2: XboxOne
+                Rectangle {
+                    height: 28px;
+                    background: (root.selected-platform-idx == 2) ? Theme.btn-hover : Theme.card-alt;
+                    border-radius: 4px;
+                    border-width: (root.selected-platform-idx == 2) ? 1px : 0px;
+                    border-color: Theme.accent;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: space-between;
+                        Text {
+                            text: "XboxOne";
+                            font-size: 11px;
+                            font-weight: 700;
+                            font-family: "Segoe UI";
+                            color: Theme.text-main;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.xbox-res-info;
+                            font-size: 10px;
+                            font-family: "Segoe UI";
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.selected-platform-idx = 2; }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // 3: Mobile (ES3)
+                Rectangle {
+                    height: 28px;
+                    background: (root.selected-platform-idx == 3) ? Theme.btn-hover : Theme.card-alt;
+                    border-radius: 4px;
+                    border-width: (root.selected-platform-idx == 3) ? 1px : 0px;
+                    border-color: Theme.accent;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: space-between;
+                        Text {
+                            text: "Mobile (ES3)";
+                            font-size: 11px;
+                            font-weight: 700;
+                            font-family: "Segoe UI";
+                            color: Theme.text-main;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: root.mobile-res-info;
+                            font-size: 10px;
+                            font-family: "Segoe UI";
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => { root.selected-platform-idx = 3; }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+            }
+        }
+
+        // =====================================================================
+        // TAB 1: MIP Control with Modern 2026+ Kernels
+        // =====================================================================
+        if root.active-tab == 1: VerticalLayout {
+            padding: 8px;
+            spacing: 6px;
+
+            CustomCheckBox {
+                text: "Generate Mipmaps";
+                checked <=> root.generate-mips;
+                toggled => { root.settings-changed(); }
+            }
+
+            CustomCheckBox {
+                text: "Maintain AlphaTest Coverage";
+                checked <=> root.maintain-alpha-coverage;
+                toggled => { root.settings-changed(); }
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Filter Method:";
+                    font-size: 11px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                }
+
+                ComboBox {
+                    model: [
+                        "Box (Fast)",
+                        "Mitchell-Netravali (Balanced)",
+                        "Catmull-Rom (Crisp)",
+                        "Lanczos3 (High Sharpness)",
+                        "Kaiser-Sinc (NVIDIA Style)",
+                        "Point (Nearest)"
+                    ];
+                    current-index <=> root.mip-filter-index;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            Text {
+                text: "MIP Alpha Adjustments:";
+                font-size: 11px;
+                font-weight: 700;
+                font-family: "Segoe UI";
+                color: Theme.text-main;
+            }
+
+            VerticalLayout {
+                spacing: 4px;
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Mip 1:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value <=> root.mip1-adjust;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.mip1-adjust)}%";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        width: 30px;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Mip 2:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value <=> root.mip2-adjust;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.mip2-adjust)}%";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        width: 30px;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Mip 3:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value <=> root.mip3-adjust;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.mip3-adjust)}%";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        width: 30px;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Mip 4:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value <=> root.mip4-adjust;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.mip4-adjust)}%";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        width: 30px;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Mip 5:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value <=> root.mip5-adjust;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.mip5-adjust)}%";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        width: 30px;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Mip 6:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 100;
+                        value <=> root.mip6-adjust;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.mip6-adjust)}%";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                        width: 30px;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+            }
+        }
+
+        // =====================================================================
+        // TAB 2: RGB to Normal (Scharr 3x3, Farid 5x5, Sobel)
+        // =====================================================================
+        if root.active-tab == 2: VerticalLayout {
+            padding: 8px;
+            spacing: 8px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Filter:";
+                    font-size: 11px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                }
+
+                ComboBox {
+                    model: [
+                        "None (Off)",
+                        "Scharr 3x3 (Optimal)",
+                        "Sobel 3x3",
+                        "Farid 5x5 (Smooth)",
+                        "Gauss (Blur)"
+                    ];
+                    current-index <=> root.rgb-bump-type;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            CustomCheckBox {
+                text: "Invert Direction";
+                checked <=> root.rgb-bump-invert;
+                toggled => { root.settings-changed(); }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "Strength:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 48px;
+                    }
+
+                    Slider {
+                        minimum: -100;
+                        maximum: 100;
+                        value <=> root.rgb-bump-strength;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.rgb-bump-strength)}";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        width: 24px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "Blur:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 48px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 10;
+                        value <=> root.rgb-bump-blur;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.rgb-bump-blur)}";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        width: 24px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+            }
+        }
+
+        // =====================================================================
+        // TAB 3: A to Normal
+        // =====================================================================
+        if root.active-tab == 3: VerticalLayout {
+            padding: 8px;
+            spacing: 8px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Filter:";
+                    font-size: 11px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                }
+
+                ComboBox {
+                    model: ["None (Off)", "Alpha Scharr (Optimal)", "Alpha Sobel", "Alpha Farid (Smooth)"];
+                    current-index <=> root.alpha-bump-type;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            CustomCheckBox {
+                text: "Invert Alpha Height";
+                checked <=> root.alpha-bump-invert;
+                toggled => { root.settings-changed(); }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "Strength:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 48px;
+                    }
+
+                    Slider {
+                        minimum: -100;
+                        maximum: 100;
+                        value <=> root.alpha-bump-strength;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.alpha-bump-strength)}";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        width: 24px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "Blur:";
+                        font-size: 10px;
+                        font-weight: 700;
+                        font-family: "Segoe UI";
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        width: 48px;
+                    }
+
+                    Slider {
+                        minimum: 0;
+                        maximum: 10;
+                        value <=> root.alpha-bump-blur;
+                        changed => { root.settings-changed(); }
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "\{round(root.alpha-bump-blur)}";
+                        font-size: 10px;
+                        font-weight: 600;
+                        font-family: "Segoe UI";
+                        color: Theme.text-muted;
+                        width: 24px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+            }
+        }
+
+        // =====================================================================
+        // TAB 4: RDO & Formats
+        // =====================================================================
+        if root.active-tab == 4: VerticalLayout {
+            padding: 8px;
+            spacing: 8px;
+
+            Text {
+                text: "RDO Rate-Distortion Optimization:";
+                font-size: 11px;
+                font-weight: 700;
+                font-family: "Segoe UI";
+                color: Theme.accent;
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Lambda:";
+                    font-size: 10px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                    width: 48px;
+                }
+
+                Slider {
+                    minimum: 0.0;
+                    maximum: 5.0;
+                    value <=> root.rdo-lambda;
+                    changed => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: (root.rdo-lambda == 0.0) ? "Off" : "\{round(root.rdo-lambda * 10) / 10}";
+                    font-size: 10px;
+                    font-weight: 600;
+                    font-family: "Segoe UI";
+                    color: (root.rdo-lambda == 0.0) ? Theme.text-muted : Theme.accent;
+                    width: 24px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+
+            CustomCheckBox {
+                text: "UltraSmooth RDO (Clean flat areas)";
+                checked <=> root.rdo-ultrasmooth;
+                toggled => { root.settings-changed(); }
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Lookback:";
+                    font-size: 10px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                    width: 56px;
+                }
+
+                ComboBox {
+                    model: ["64 Blocks (Fast)", "128 Blocks", "256 Blocks (Default)", "512 Blocks (Max)"];
+                    current-index <=> root.rdo-lookback-index;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+
+            Text {
+                text: "Format Override & Quality:";
+                font-size: 11px;
+                font-weight: 700;
+                font-family: "Segoe UI";
+                color: Theme.text-main;
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Format:";
+                    font-size: 10px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                    width: 56px;
+                }
+
+                ComboBox {
+                    model: [
+                        "From Preset",
+                        "BC1 (DXT1)",
+                        "BC1a",
+                        "BC3 (DXT5)",
+                        "BC4",
+                        "BC5s (Normals)",
+                        "BC6H (HDR)",
+                        "BC7",
+                        "RGBA8 (Lossless)"
+                    ];
+                    current-index <=> root.format-override-index;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Quality:";
+                    font-size: 10px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                    width: 56px;
+                }
+
+                ComboBox {
+                    model: ["Ultrafast", "Fast", "Normal (Default)", "Slow", "Slowest"];
+                    current-index <=> root.quality-index;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Colorspace:";
+                    font-size: 10px;
+                    font-weight: 700;
+                    font-family: "Segoe UI";
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                    width: 56px;
+                }
+
+                ComboBox {
+                    model: ["Auto (from Preset)", "sRGB (Gamma 2.2)", "Linear"];
+                    current-index <=> root.colorspace-index;
+                    selected(val) => { root.settings-changed(); }
+                    horizontal-stretch: 1;
+                }
+            }
+
+            CustomCheckBox {
+                text: "Floyd-Steinberg Dithering";
+                checked <=> root.dither;
+                toggled => { root.settings-changed(); }
+            }
+
+            CustomCheckBox {
+                text: "Discard Alpha Channel";
+                checked <=> root.discard-alpha;
+                toggled => { root.settings-changed(); }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+            }
+        }
+    }
+}

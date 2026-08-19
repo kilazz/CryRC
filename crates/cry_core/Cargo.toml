@@ -1,0 +1,12 @@
+[package]
+name = "cry_core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+byteorder.workspace = true
+crc32fast.workspace = true
+md5.workspace = true
+filetime.workspace = true
+thiserror.workspace = true

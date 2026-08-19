@@ -1,0 +1,10 @@
+[package]
+name = "cry_pak"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+byteorder.workspace = true
+crc32fast.workspace = true
+flate2.workspace = true

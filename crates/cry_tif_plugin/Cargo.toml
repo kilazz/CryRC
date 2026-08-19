@@ -1,0 +1,25 @@
+[package]
+name = "cry_tif_plugin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "CryEngine CryTIF Photoshop File Format Plugin (.8bi)"
+
+[lib]
+name = "CryTIFPlugin"
+crate-type = ["cdylib"]
+
+[dependencies]
+cry_core.workspace = true
+cry_image.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+half.workspace = true
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+winres = "0.1.12"

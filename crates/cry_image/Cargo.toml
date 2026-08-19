@@ -1,0 +1,22 @@
+[package]
+name = "cry_image"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "CryEngine Texture Processing Engine & Block Compression Library"
+
+[dependencies]
+cry_core.workspace = true
+cry_asset.workspace = true
+image.workspace = true
+rayon.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "compression_bench"
+harness = false

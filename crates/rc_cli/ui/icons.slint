@@ -1,0 +1,93 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// Pixel-Aligned & Vertically Centered Fluent SVG Vector Icons
+
+export component SvgSun inherits Rectangle {
+    in property <color> icon-color: #ffffff;
+    width: 14px;
+    height: 14px;
+    background: transparent;
+
+    Path {
+        width: 14px;
+        height: 14px;
+        stroke: root.icon-color;
+        stroke-width: 1.4px;
+        commands: "M 7 3.5 A 3.5 3.5 0 1 0 7 10.5 A 3.5 3.5 0 1 0 7 3.5 M 7 0.5 L 7 2.2 M 7 11.8 L 7 13.5 M 0.5 7 L 2.2 7 M 11.8 7 L 13.5 7 M 2.4 2.4 L 3.6 3.6 M 10.4 10.4 L 11.6 11.6 M 2.4 11.6 L 3.6 10.4 M 10.4 3.6 L 11.6 2.4";
+    }
+}
+
+export component SvgMoon inherits Rectangle {
+    in property <color> icon-color: #ffffff;
+    width: 14px;
+    height: 14px;
+    background: transparent;
+
+    Path {
+        width: 14px;
+        height: 14px;
+        fill: root.icon-color;
+        commands: "M 11.2 8.2 C 10.8 11.2 8.4 13.5 5.5 13.5 C 2.5 13.5 0 11 0 8 C 0 5 2.2 2.6 5.1 2.2 C 4.7 3.2 4.5 4.3 4.5 5.5 C 4.5 9.1 7.4 12 11 12 C 11.5 12 12 11.9 12.5 11.7 C 12.1 10.2 11.5 9 11.2 8.2 Z";
+    }
+}
+
+// Pixel-perfect centered Zoom In (Magnifier with +)
+export component SvgZoomIn inherits Rectangle {
+    in property <color> icon-color: #ffffff;
+    width: 14px;
+    height: 14px;
+    background: transparent;
+
+    Path {
+        width: 14px;
+        height: 14px;
+        stroke: root.icon-color;
+        stroke-width: 1.4px;
+        commands: "M 6 2.5 A 3.5 3.5 0 1 0 6 9.5 A 3.5 3.5 0 1 0 6 2.5 M 8.5 8.5 L 12.5 12.5 M 4 6 L 8 6 M 6 4 L 6 8";
+    }
+}
+
+// Pixel-perfect centered Zoom Out (Magnifier with -)
+export component SvgZoomOut inherits Rectangle {
+    in property <color> icon-color: #ffffff;
+    width: 14px;
+    height: 14px;
+    background: transparent;
+
+    Path {
+        width: 14px;
+        height: 14px;
+        stroke: root.icon-color;
+        stroke-width: 1.4px;
+        commands: "M 6 2.5 A 3.5 3.5 0 1 0 6 9.5 A 3.5 3.5 0 1 0 6 2.5 M 8.5 8.5 L 12.5 12.5 M 4 6 L 8 6";
+    }
+}
+
+export component SvgCheck inherits Rectangle {
+    in property <color> icon-color: #ffffff;
+    width: 10px;
+    height: 8px;
+    background: transparent;
+
+    Path {
+        width: 10px;
+        height: 8px;
+        stroke: root.icon-color;
+        stroke-width: 1.6px;
+        commands: "M 1 4 L 3.5 7 L 9 1";
+    }
+}
+
+export component SvgClose inherits Rectangle {
+    in property <color> icon-color: #ffffff;
+    width: 10px;
+    height: 10px;
+    background: transparent;
+
+    Path {
+        width: 10px;
+        height: 10px;
+        stroke: root.icon-color;
+        stroke-width: 1.6px;
+        commands: "M 1 1 L 9 9 M 9 1 L 1 9";
+    }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "cry_model"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cry_core.workspace = true
+cry_mesh.workspace = true
+byteorder.workspace = true
+crc32fast.workspace = true
+half.workspace = true
+quick-xml.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+flate2.workspace = true
+thiserror.workspace = true

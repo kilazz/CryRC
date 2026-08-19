@@ -1,0 +1,13 @@
+[package]
+name = "cry_alembic"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cry_core.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+lz4_flex.workspace = true
+quick-xml.workspace = true
+thiserror.workspace = true

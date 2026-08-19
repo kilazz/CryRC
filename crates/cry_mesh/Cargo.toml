@@ -1,0 +1,11 @@
+[package]
+name = "cry_mesh"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+cry_core.workspace = true
+rayon.workspace = true
+serde.workspace = true
+thiserror.workspace = true
