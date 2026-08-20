@@ -1,5 +1,5 @@
 // Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
-// CryTIF Plugin Main Dialog Window with Balanced 50/50 Dual Viewports
+// CryTIF Plugin Main Dialog Window with Balanced 50/50 Dual Viewports and Mipmap Inspection
 
 import { Theme } from "theme.slint";
 import { SvgZoomIn, SvgZoomOut } from "icons.slint";
@@ -36,6 +36,8 @@ export component CryTifDialog inherits Window {
     in-out property <int> channel-mode-index: 0;
     in-out property <string> channel-mode-desc: "Normal RGB preview mode (alpha channel ignored)";
     in-out property <int> zoom-percent: 100;
+    in-out property <int> mip-level: 0;
+    in property <int> mip-count: 1;
 
     // Tab 1: Resolution & Platforms
     in-out property <bool> suppress-engine-reduce: false;
@@ -232,120 +234,217 @@ export component CryTifDialog inherits Window {
                                 }
                             }
 
-                            // Right Zoom Controls Group
-                            VerticalLayout {
-                                alignment: center;
+                            // Right Mip & Zoom Controls Group
+                            HorizontalLayout {
+                                spacing: 12px;
+                                alignment: end;
 
-                                HorizontalLayout {
-                                    spacing: 4px;
+                                // Mip Controls
+                                VerticalLayout {
+                                    alignment: center;
+                                    HorizontalLayout {
+                                        spacing: 4px;
+                                        alignment: center;
+                                        Text {
+                                            text: "MIP:";
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            font-family: "Segoe UI";
+                                            color: Theme.text-main;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Rectangle {
+                                            background: Theme.card-alt;
+                                            border-width: 1px;
+                                            border-color: Theme.border;
+                                            border-radius: 3px;
+                                            height: 24px;
+                                            clip: true;
+                                            HorizontalLayout {
+                                                Rectangle {
+                                                    width: 24px;
+                                                    background: Theme.btn-bg;
+                                                    Text {
+                                                        text: "-";
+                                                        font-size: 14px;
+                                                        font-weight: 700;
+                                                        color: Theme.text-main;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                    }
+
+                                                    TouchArea {
+                                                        clicked => {
+                                                            root.mip-level = max(0, root.mip-level - 1);
+                                                            root.settings-changed();
+                                                        }
+                                                        mouse-cursor: pointer;
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    width: 1px;
+                                                    background: Theme.border;
+                                                }
+
+                                                Rectangle {
+                                                    width: 32px;
+                                                    Text {
+                                                        text: "\{root.mip-level}";
+                                                        font-size: 11px;
+                                                        font-weight: 700;
+                                                        color: Theme.text-main;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    width: 1px;
+                                                    background: Theme.border;
+                                                }
+
+                                                Rectangle {
+                                                    width: 24px;
+                                                    background: Theme.btn-bg;
+                                                    Text {
+                                                        text: "+";
+                                                        font-size: 14px;
+                                                        font-weight: 700;
+                                                        color: Theme.text-main;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                    }
+
+                                                    TouchArea {
+                                                        clicked => {
+                                                            root.mip-level = min(root.mip-count - 1, root.mip-level + 1);
+                                                            root.settings-changed();
+                                                        }
+                                                        mouse-cursor: pointer;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Zoom Controls
+                                VerticalLayout {
                                     alignment: center;
 
-                                    Text {
-                                        text: "Zoom:";
-                                        font-size: 11px;
-                                        font-weight: 700;
-                                        font-family: "Segoe UI";
-                                        color: Theme.text-main;
-                                        vertical-alignment: center;
-                                    }
+                                    HorizontalLayout {
+                                        spacing: 4px;
+                                        alignment: center;
 
-                                    // Zoom Out Button
-                                    Rectangle {
-                                        width: 26px;
-                                        height: 24px;
-                                        background: Theme.btn-bg;
-                                        border-width: 1px;
-                                        border-color: Theme.border;
-                                        border-radius: 3px;
+                                        Text {
+                                            text: "Zoom:";
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            font-family: "Segoe UI";
+                                            color: Theme.text-main;
+                                            vertical-alignment: center;
+                                        }
 
-                                        VerticalLayout {
-                                            alignment: center;
-                                            HorizontalLayout {
+                                        // Zoom Out Button
+                                        Rectangle {
+                                            width: 26px;
+                                            height: 24px;
+                                            background: Theme.btn-bg;
+                                            border-width: 1px;
+                                            border-color: Theme.border;
+                                            border-radius: 3px;
+
+                                            VerticalLayout {
                                                 alignment: center;
-                                                SvgZoomOut {
-                                                    icon-color: Theme.text-main;
+                                                HorizontalLayout {
+                                                    alignment: center;
+                                                    SvgZoomOut {
+                                                        icon-color: Theme.text-main;
+                                                    }
+                                                }
+                                            }
+
+                                            TouchArea {
+                                                clicked => { root.zoom-out(); }
+                                                mouse-cursor: pointer;
+                                            }
+                                        }
+
+                                        // Zoom In Button
+                                        Rectangle {
+                                            width: 26px;
+                                            height: 24px;
+                                            background: Theme.btn-bg;
+                                            border-width: 1px;
+                                            border-color: Theme.border;
+                                            border-radius: 3px;
+
+                                            VerticalLayout {
+                                                alignment: center;
+                                                HorizontalLayout {
+                                                    alignment: center;
+                                                    SvgZoomIn {
+                                                        icon-color: Theme.text-main;
+                                                    }
+                                                }
+                                            }
+
+                                            TouchArea {
+                                                clicked => { root.zoom-in(); }
+                                                mouse-cursor: pointer;
+                                            }
+                                        }
+
+                                        // Percentage Label Box
+                                        Rectangle {
+                                            background: Theme.card-alt;
+                                            border-width: 1px;
+                                            border-color: Theme.border;
+                                            border-radius: 3px;
+                                            height: 24px;
+
+                                            HorizontalLayout {
+                                                padding-left: 6px;
+                                                padding-right: 6px;
+                                                alignment: center;
+                                                Text {
+                                                    text: "\{root.zoom-percent}%";
+                                                    font-size: 10px;
+                                                    font-weight: 700;
+                                                    font-family: "Segoe UI";
+                                                    color: Theme.text-main;
+                                                    vertical-alignment: center;
                                                 }
                                             }
                                         }
 
-                                        TouchArea {
-                                            clicked => { root.zoom-out(); }
-                                            mouse-cursor: pointer;
-                                        }
-                                    }
+                                        // 1:1 Reset Button
+                                        Rectangle {
+                                            width: 30px;
+                                            height: 24px;
+                                            background: Theme.btn-bg;
+                                            border-width: 1px;
+                                            border-color: Theme.border;
+                                            border-radius: 3px;
 
-                                    // Zoom In Button
-                                    Rectangle {
-                                        width: 26px;
-                                        height: 24px;
-                                        background: Theme.btn-bg;
-                                        border-width: 1px;
-                                        border-color: Theme.border;
-                                        border-radius: 3px;
-
-                                        VerticalLayout {
-                                            alignment: center;
                                             HorizontalLayout {
                                                 alignment: center;
-                                                SvgZoomIn {
-                                                    icon-color: Theme.text-main;
+                                                Text {
+                                                    text: "1:1";
+                                                    font-size: 10px;
+                                                    font-weight: 700;
+                                                    font-family: "Segoe UI";
+                                                    color: Theme.text-main;
+                                                    vertical-alignment: center;
                                                 }
                                             }
-                                        }
 
-                                        TouchArea {
-                                            clicked => { root.zoom-in(); }
-                                            mouse-cursor: pointer;
-                                        }
-                                    }
-
-                                    // Percentage Label Box
-                                    Rectangle {
-                                        background: Theme.card-alt;
-                                        border-width: 1px;
-                                        border-color: Theme.border;
-                                        border-radius: 3px;
-                                        height: 24px;
-
-                                        HorizontalLayout {
-                                            padding-left: 6px;
-                                            padding-right: 6px;
-                                            alignment: center;
-                                            Text {
-                                                text: "\{root.zoom-percent}%";
-                                                font-size: 10px;
-                                                font-weight: 700;
-                                                font-family: "Segoe UI";
-                                                color: Theme.text-main;
-                                                vertical-alignment: center;
+                                            TouchArea {
+                                                clicked => { root.zoom-reset(); }
+                                                mouse-cursor: pointer;
                                             }
-                                        }
-                                    }
-
-                                    // 1:1 Reset Button
-                                    Rectangle {
-                                        width: 30px;
-                                        height: 24px;
-                                        background: Theme.btn-bg;
-                                        border-width: 1px;
-                                        border-color: Theme.border;
-                                        border-radius: 3px;
-
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Text {
-                                                text: "1:1";
-                                                font-size: 10px;
-                                                font-weight: 700;
-                                                font-family: "Segoe UI";
-                                                color: Theme.text-main;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-
-                                        TouchArea {
-                                            clicked => { root.zoom-reset(); }
-                                            mouse-cursor: pointer;
                                         }
                                     }
                                 }

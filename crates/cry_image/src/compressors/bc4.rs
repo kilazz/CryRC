@@ -1,3 +1,6 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// BC4 / 3Dc+ Single-Channel Block Compressor (Unsigned & Signed SNORM)
+
 use crate::compressors::bc3::{
     compress_alpha_bc3, decompress_alpha_bc3, read_alpha_block_bc3, write_alpha_block_bc3,
 };
@@ -106,25 +109,54 @@ pub fn compress_bc4(data: &[u8; 16], mask: u16, flags: u32, block: &mut [u8; 8])
 pub fn compress_bc4_signed(data: &[i8; 16], mask: u16, _flags: u32, block: &mut [u8; 8]) {
     let mut min7 = 127i8;
     let mut max7 = -127i8;
+    let mut min5 = 127i8;
+    let mut max5 = -127i8;
 
     for (i, &raw_val) in data.iter().enumerate() {
         if (mask & (1 << i)) == 0 {
             continue;
         }
         let val = raw_val.clamp(-127, 127);
-        if val < min7 {
-            min7 = val;
-        }
-        if val > max7 {
-            max7 = val;
+        min7 = min7.min(val);
+        max7 = max7.max(val);
+        if val != -127 && val != 127 {
+            min5 = min5.min(val);
+            max5 = max5.max(val);
         }
     }
 
+    if min7 > max7 {
+        block.fill(0);
+        return;
+    }
+
+    if min5 > max5 {
+        min5 = min7;
+        max5 = max7;
+    }
+
+    // Flat block handling (e.g. 0 for neutral normal components)
+    if max7 == min7 {
+        let indices = [0u8; 16];
+        write_alpha_block_bc3(max7 as u8, max7 as u8, &indices, block);
+        return;
+    }
+
+    // 8-step signed mode (max7 > min7)
     let codes7 = build_codebook_8_signed(max7, min7);
     let mut indices7 = [0u8; 16];
-    fit_codes_signed(data, mask, &codes7, &mut indices7);
+    let err7 = fit_codes_signed(data, mask, &codes7, &mut indices7);
 
-    write_alpha_block_bc3(max7 as u8, min7 as u8, &indices7, block);
+    // 6-step signed mode (min5 <= max5)
+    let codes5 = build_codebook_6_signed(min5, max5);
+    let mut indices5 = [0u8; 16];
+    let err5 = fit_codes_signed(data, mask, &codes5, &mut indices5);
+
+    if err7 <= err5 {
+        write_alpha_block_bc3(max7 as u8, min7 as u8, &indices7, block);
+    } else {
+        write_alpha_block_bc3(min5 as u8, max5 as u8, &indices5, block);
+    }
 }
 
 pub fn compress_bc4_u16(data: &[u16; 16], mask: u16, block: &mut [u8; 8]) {

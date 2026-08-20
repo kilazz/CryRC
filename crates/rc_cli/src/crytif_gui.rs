@@ -5,8 +5,8 @@ use cry_core::CfgFile;
 use cry_image::{
     BumpProperties, CPixelFormats, ColorMetric, CompressionOptions, EInputColorSpace,
     EOutputColorSpace, EPixelFormat, FitStrategy, Format as TfFormat, ImageCompiler,
-    ImageProperties, NormalFilterType, NormalProcessing, QualityLevel, decompress_image,
-    get_storage_requirements,
+    ImageProperties, MipmapFilter, MipmapLevel, NormalFilterType, NormalProcessing, QualityLevel,
+    compute_max_mip_count, decompress_image, get_storage_requirements, map_engine_format_to_tf,
 };
 use slint::{ComponentHandle, Image, Rgba8Pixel, SharedPixelBuffer, VecModel};
 use std::path::Path;
@@ -167,6 +167,8 @@ impl CryTifGui {
                     );
                     update_platform_res_labels(&ui, width, height, &p_red.borrow(), &fmt_name);
 
+                    // Reset Mip to 0 on preset change
+                    ui.set_mip_level(0);
                     update_previews_both(
                         &ui,
                         &src_data,
@@ -179,7 +181,7 @@ impl CryTifGui {
             });
         }
 
-        // Callback: Settings / Sliders / Channels / Checkboxes Changed
+        // Callback: Settings / Sliders / Channels / Checkboxes / Mips Changed
         {
             let ui_weak = ui_handle.clone();
             let src_data = Arc::clone(&src_rgba_clone);
@@ -422,19 +424,7 @@ pub fn resolve_preset_format(
         }
 
         if let Some(engine_fmt) = CPixelFormats::find_pixel_format_by_name(&pixel_format_name) {
-            let (tf_fmt, is_signed) = match engine_fmt {
-                EPixelFormat::BC1 | EPixelFormat::BC1a => (TfFormat::Bc1, false),
-                EPixelFormat::BC2 | EPixelFormat::BC2t => (TfFormat::Bc2, false),
-                EPixelFormat::BC3 | EPixelFormat::BC3t => (TfFormat::Bc3, false),
-                EPixelFormat::BC4 => (TfFormat::Bc4, false),
-                EPixelFormat::BC4s => (TfFormat::Bc4, true),
-                EPixelFormat::BC5 => (TfFormat::Bc5, false),
-                EPixelFormat::BC5s => (TfFormat::Bc5, true),
-                EPixelFormat::BC6UH => (TfFormat::Bc6h, false),
-                EPixelFormat::BC7 | EPixelFormat::BC7t => (TfFormat::Bc7, false),
-                EPixelFormat::CTX1 => (TfFormat::Ctx1, false),
-                _ => (TfFormat::Bc7, false),
-            };
+            let (tf_fmt, is_signed) = map_engine_format_to_tf(engine_fmt);
             let disp = pixel_format_name.clone();
             return (tf_fmt, is_signed, engine_fmt, is_normal, disp);
         }
@@ -711,7 +701,7 @@ fn render_preview_canvas(
     (out, canvas_size, canvas_size)
 }
 
-/// Computes the exact, synchronized compression preview for the target window.
+/// Computes the exact, synchronized compression preview for the target window and specific Mip level.
 fn update_previews_both(
     ui: &CryTifDialog,
     src_rgba: &[u8],
@@ -737,46 +727,18 @@ fn update_previews_both(
     };
     ui.set_channel_mode_desc(helper_desc.into());
 
-    // 2. Render Source Preview (Left Window)
-    let (processed_source, view_w, view_h) =
-        render_preview_canvas(src_rgba, width, height, channel_mode, zoom_percent, tiled);
-
-    let mut src_pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::new(view_w as u32, view_h as u32);
-    src_pixel_buffer
-        .make_mut_slice()
-        .copy_from_slice(bytemuck_cast_slice(&processed_source));
-    ui.set_source_preview(Image::from_rgba8(src_pixel_buffer.clone()));
-    ui.set_source_info(
-        format!(
-            "{}x{} Fmt: A8R8G8B8{}",
-            width,
-            height,
-            if tiled { " [Tiled]" } else { "" }
-        )
-        .into(),
-    );
-
-    // If Preview toggle is OFF, bypass compression
-    if !preview_on {
-        ui.set_target_preview(Image::from_rgba8(src_pixel_buffer));
-        ui.set_target_info("[Preview OFF] Compression Bypassed".into());
-        return;
-    }
-
-    // 3. Resolve EXACT Format Matching Compiler Configuration
-    let (tf_format, is_signed, engine_fmt, is_normal, fmt_display_name) =
+    // 2. Resolve Base Configuration and Process Source Image
+    let (_, _, mut engine_fmt, is_normal, _) =
         resolve_preset_format(preset_name, ui.get_format_override_index(), ini_file);
 
     let mut processed_rgba = src_rgba.to_vec();
 
-    // Handle Discard Alpha
     if ui.get_discard_alpha() && !is_normal {
         for px in processed_rgba.chunks_exact_mut(4) {
             px[3] = 255;
         }
     }
 
-    // Process Bump / Normal Mappings
     let rgb_filter = match ui.get_rgb_bump_type() {
         1 => NormalFilterType::Scharr3x3,
         2 => NormalFilterType::Sobel3x3,
@@ -850,15 +812,133 @@ fn update_previews_both(
         }
     }
 
-    // 4. Color Space & Quality Setup
+    // Smart 1-bit Alpha / Discard Alpha Cleanup
+    let is_1bit_alpha = engine_fmt == EPixelFormat::BC1a || ui.get_maintain_alpha_coverage();
+    let is_bc1_opaque = engine_fmt == EPixelFormat::BC1 && !is_1bit_alpha;
+
+    if is_bc1_opaque || ui.get_discard_alpha() {
+        for p in processed_rgba.chunks_exact_mut(4) {
+            p[3] = 255;
+        }
+    } else if is_1bit_alpha {
+        for p in processed_rgba.chunks_exact_mut(4) {
+            p[3] = if p[3] < 127 { 0 } else { 255 };
+        }
+    }
+
+    // 3. Mipmap Generation & Resolution
     let use_srgb = match ui.get_colorspace_index() {
         1 => true,
         2 => false,
         _ => !is_normal,
     };
 
+    let alpha_cov = if ui.get_maintain_alpha_coverage() || preset_name.contains("Coverage") {
+        Some(cry_image::AlphaCoverageOptions { alpha_cutoff: 0.5 })
+    } else {
+        None
+    };
+
+    // Dynamically query selected mipmap filter
+    let filter_method = match ui.get_mip_filter_index() {
+        0 => MipmapFilter::Box,
+        1 => MipmapFilter::MitchellNetravali,
+        2 => MipmapFilter::CatmullRom,
+        3 => MipmapFilter::Lanczos3,
+        4 => MipmapFilter::KaiserSinc,
+        5 => MipmapFilter::Point,
+        _ => MipmapFilter::MitchellNetravali,
+    };
+
+    let mut mip_chain = if ui.get_generate_mips() {
+        cry_image::generate_mipmaps_rgba(
+            &processed_rgba,
+            width,
+            height,
+            filter_method,
+            use_srgb,
+            alpha_cov,
+        )
+    } else {
+        vec![MipmapLevel {
+            width,
+            height,
+            data: processed_rgba.clone(),
+        }]
+    };
+
+    let is_uncompressed_initial = matches!(
+        engine_fmt,
+        EPixelFormat::A8R8G8B8 | EPixelFormat::X8R8G8B8 | EPixelFormat::R8G8B8
+    );
+
+    // Truncate to maximum engine supported mips
+    let max_mips = compute_max_mip_count(width, height, !is_uncompressed_initial);
+    if mip_chain.len() > max_mips {
+        mip_chain.truncate(max_mips);
+    }
+
+    let total_mips = mip_chain.len();
+    ui.set_mip_count(total_mips as i32);
+
+    let mut mip_idx = ui.get_mip_level() as usize;
+    if mip_idx >= total_mips {
+        mip_idx = total_mips - 1;
+        ui.set_mip_level(mip_idx as i32);
+    }
+
+    let preview_mip = &mip_chain[mip_idx];
+    let mip_w = preview_mip.width;
+    let mip_h = preview_mip.height;
+
+    // 4. Render Source Preview (Left Window)
+    let (processed_source, view_w, view_h) = render_preview_canvas(
+        &preview_mip.data,
+        mip_w,
+        mip_h,
+        channel_mode,
+        zoom_percent,
+        tiled,
+    );
+
+    let mut src_pixel_buffer = SharedPixelBuffer::<Rgba8Pixel>::new(view_w as u32, view_h as u32);
+    src_pixel_buffer
+        .make_mut_slice()
+        .copy_from_slice(bytemuck_cast_slice(&processed_source));
+
+    ui.set_source_preview(Image::from_rgba8(src_pixel_buffer.clone()));
+    ui.set_source_info(
+        format!(
+            "{}x{} (Mip {}) Fmt: A8R8G8B8{}",
+            mip_w,
+            mip_h,
+            mip_idx,
+            if tiled { " [Tiled]" } else { "" }
+        )
+        .into(),
+    );
+
+    if !preview_on {
+        ui.set_target_preview(Image::from_rgba8(src_pixel_buffer));
+        ui.set_target_info("[Preview OFF] Compression Bypassed".into());
+        return;
+    }
+
+    // 5. Smart Upgrade/Downgrade Engine Format
+    let has_real_alpha =
+        !ui.get_discard_alpha() && preview_mip.data.chunks_exact(4).any(|p| p[3] < 255);
+    engine_fmt = CPixelFormats::get_final_pixel_format(engine_fmt, has_real_alpha);
+
+    let (tf_format, is_signed) = map_engine_format_to_tf(engine_fmt);
+    let fmt_display_name = format!("{:?}", engine_fmt);
+
     let rdo_val = ui.get_rdo_lambda();
-    let is_1bit_alpha = engine_fmt == EPixelFormat::BC1a || ui.get_maintain_alpha_coverage();
+    let weight_by_alpha = !is_normal
+        && !ui.get_discard_alpha()
+        && matches!(
+            engine_fmt,
+            EPixelFormat::BC2 | EPixelFormat::BC3 | EPixelFormat::BC7 | EPixelFormat::BC7t
+        );
 
     let compress_opts = CompressionOptions {
         format: tf_format,
@@ -871,12 +951,7 @@ fn update_previews_both(
         },
         strategy: FitStrategy::FastRange,
         quality: QualityLevel::Fast,
-        weight_by_alpha: !is_normal
-            && !ui.get_discard_alpha()
-            && matches!(
-                engine_fmt,
-                EPixelFormat::BC2 | EPixelFormat::BC3 | EPixelFormat::BC7 | EPixelFormat::BC7t
-            ),
+        weight_by_alpha,
         is_1bit_alpha,
         alpha_iterative_fit: true,
         is_signed,
@@ -891,37 +966,29 @@ fn update_previews_both(
         rdo_smooth_block_scale: None,
     };
 
-    // 5. Compress and Decompress using Exact Pipeline
-    let decompressed = if engine_fmt == EPixelFormat::A8R8G8B8
-        || engine_fmt == EPixelFormat::X8R8G8B8
-    {
-        processed_rgba.clone()
+    // 6. Compress and Decompress using Exact Pipeline (Only the selected Mip)
+    let decompressed = if is_uncompressed_initial {
+        preview_mip.data.clone()
     } else {
-        let compressed = cry_image::compress_image(&processed_rgba, width, height, compress_opts);
-        decompress_image(&compressed, width, height, tf_format)
+        let compressed = cry_image::compress_image(&preview_mip.data, mip_w, mip_h, compress_opts);
+        decompress_image(&compressed, mip_w, mip_h, tf_format)
     };
 
-    // Calculate Accurate DDS Size with Mipmaps
-    let mip_count = if ui.get_generate_mips() {
-        (width.max(height) as f32).log2().floor() as u32 + 1
-    } else {
-        1
-    };
-
+    // Calculate Accurate DDS Size with Mipmaps (for full chain)
     let mut total_dds_bytes = 148usize; // DDS + DX10 header
     let mut cur_w = width;
     let mut cur_h = height;
-    for _ in 0..mip_count {
+    for _ in 0..total_mips {
         total_dds_bytes += get_storage_requirements(cur_w, cur_h, tf_format);
         cur_w = (cur_w / 2).max(1);
         cur_h = (cur_h / 2).max(1);
     }
 
-    // 6. Render Target Preview (Right Window)
+    // 7. Render Target Preview (Right Window)
     let (processed_target, t_w, t_h) = render_preview_canvas(
         &decompressed,
-        width,
-        height,
+        mip_w,
+        mip_h,
         channel_mode,
         zoom_percent,
         tiled,
@@ -936,9 +1003,9 @@ fn update_previews_both(
     ui.set_target_info(
         format!(
             "{}x{} Mips: {} Fmt: {} Mdl: {}{} ({} KB)",
-            width,
-            height,
-            mip_count,
+            mip_w,
+            mip_h,
+            total_mips,
             fmt_display_name,
             if is_normal {
                 "Linear"

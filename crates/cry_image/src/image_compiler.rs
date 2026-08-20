@@ -42,6 +42,54 @@ pub struct LoadedSourceImage {
     pub hdr_pixels: Vec<Vec4>,
 }
 
+/// Helper function to strictly match CryEngine's mip count logic.
+pub fn compute_max_mip_count(width: usize, height: usize, is_compressed: bool) -> usize {
+    let min_size = if is_compressed { 4 } else { 1 };
+    let mut w = width;
+    let mut h = height;
+    let mut mips_w = 0;
+    let mut mips_h = 0;
+
+    while w >= min_size {
+        mips_w += 1;
+        w >>= 1;
+    }
+    while h >= min_size {
+        mips_h += 1;
+        h >>= 1;
+    }
+
+    if mips_w == 0 {
+        mips_w = 1;
+    }
+    if mips_h == 0 {
+        mips_h = 1;
+    }
+
+    if is_compressed {
+        mips_w.min(mips_h)
+    } else {
+        mips_w.max(mips_h)
+    }
+}
+
+pub fn map_engine_format_to_tf(fmt: EPixelFormat) -> (TfFormat, bool) {
+    match fmt {
+        EPixelFormat::BC1 => (TfFormat::Bc1, false),
+        EPixelFormat::BC1a => (TfFormat::Bc1, false),
+        EPixelFormat::BC2 | EPixelFormat::BC2t => (TfFormat::Bc2, false),
+        EPixelFormat::BC3 | EPixelFormat::BC3t => (TfFormat::Bc3, false),
+        EPixelFormat::BC4 => (TfFormat::Bc4, false),
+        EPixelFormat::BC4s => (TfFormat::Bc4, true),
+        EPixelFormat::BC5 => (TfFormat::Bc5, false),
+        EPixelFormat::BC5s => (TfFormat::Bc5, true),
+        EPixelFormat::BC6UH => (TfFormat::Bc6h, false),
+        EPixelFormat::BC7 | EPixelFormat::BC7t => (TfFormat::Bc7, false),
+        EPixelFormat::CTX1 => (TfFormat::Ctx1, false),
+        _ => (TfFormat::Bc7, false),
+    }
+}
+
 /// High-level Resource Compiler image processing pipeline.
 pub struct ImageCompiler {
     pub props: ImageProperties,
@@ -80,7 +128,6 @@ impl ImageCompiler {
         }
     }
 
-    /// Resolves deprecated legacy preset names into modern engine equivalents.
     pub fn resolve_preset_alias(ini: &CfgFile, preset_name: &str) -> String {
         if let Some(alias_sec_idx) = ini.find_section("_presetAliases") {
             let sec = &ini.sections[alias_sec_idx];
@@ -93,7 +140,6 @@ impl ImageCompiler {
         preset_name.to_string()
     }
 
-    /// Matches the source texture filename against filemasks in rc.ini using longest-match priority.
     pub fn apply_ini_preset(&mut self, ini: &CfgFile, filename: &str) {
         let mut matched_section = None;
         let mut best_mask_len = 0;
@@ -228,7 +274,6 @@ impl ImageCompiler {
         }
     }
 
-    /// Compiles an image asset from disk into a fully processed and compressed CryEngine DDS file.
     pub fn process_file(
         &mut self,
         input_path: &Path,
@@ -325,13 +370,26 @@ impl ImageCompiler {
                 compute_normal_map(&heightmap, width, height, NormalMapOptions::default());
         }
 
-        if self.props.discard_alpha && !has_attached_alpha {
+        // 5.5. Force alpha = 255 for opaque diffuse / discard alpha
+        let is_1bit_alpha = dest_format == EPixelFormat::BC1a || self.props.maintain_alpha_coverage;
+        let is_bc1_opaque = dest_format == EPixelFormat::BC1 && !is_1bit_alpha;
+
+        if (is_bc1_opaque || self.props.discard_alpha) && !has_attached_alpha {
             for p in processed_rgba.chunks_exact_mut(4) {
                 p[3] = 255;
             }
+        } else if is_1bit_alpha {
+            for p in processed_rgba.chunks_exact_mut(4) {
+                p[3] = if p[3] < 127 { 0 } else { 255 };
+            }
         }
 
-        // 6. Resolve Color Space and Generate Mipchain with Mitchell-Netravali Kernel
+        // 5.6. Smart upgrade/downgrade format according to real alpha content
+        let has_real_alpha =
+            !self.props.discard_alpha && processed_rgba.chunks_exact(4).any(|p| p[3] < 255);
+        let dest_format = CPixelFormats::get_final_pixel_format(dest_format, has_real_alpha);
+
+        // 6. Resolve Color Space and Generate Mipchain
         let use_srgb = match self.props.output_color_space {
             EOutputColorSpace::Srgb => true,
             EOutputColorSpace::Linear => false,
@@ -376,6 +434,17 @@ impl ImageCompiler {
             mip_chain.drain(0..reduce);
         }
 
+        // 7.5. Truncate invalid mips (CryEngine limits block-compressed textures to 4x4 minimum size)
+        let is_uncompressed = matches!(
+            dest_format,
+            EPixelFormat::A8R8G8B8 | EPixelFormat::X8R8G8B8 | EPixelFormat::R8G8B8
+        );
+        let max_mips =
+            compute_max_mip_count(mip_chain[0].width, mip_chain[0].height, !is_uncompressed);
+        if mip_chain.len() > max_mips {
+            mip_chain.truncate(max_mips);
+        }
+
         // 8. Normal Map Toksvig Gloss and Legacy Gloss Processing
         if self.props.gloss_from_normals || has_attached_alpha {
             for level in &mut mip_chain {
@@ -404,7 +473,7 @@ impl ImageCompiler {
             }
         }
 
-        // 9. Dithering (if enabled)
+        // 9. Dithering
         if self.dither {
             for level in &mut mip_chain {
                 let mut dithered = vec![0u8; level.data.len()];
@@ -419,7 +488,7 @@ impl ImageCompiler {
             }
         }
 
-        // 10. Mobile Codec Dispatch for Mobile Targets
+        // 10. Mobile Codec Dispatch
         if self.platform.eq_ignore_ascii_case("es3")
             || self.platform.eq_ignore_ascii_case("android")
         {
@@ -433,16 +502,11 @@ impl ImageCompiler {
         }
 
         // 11. Uncompressed Formats vs Block Compression Pipeline
-        let is_uncompressed = matches!(
-            dest_format,
-            EPixelFormat::A8R8G8B8 | EPixelFormat::X8R8G8B8 | EPixelFormat::R8G8B8
-        );
-
         let mut main_compressed_payload = Vec::new();
         let mut alpha_compressed_payload = Vec::new();
 
         if is_uncompressed {
-            // Direct BGRA / BGRX uncompressed stream (used for Gradients, UI, ColorCharts)
+            // Direct BGRA / BGRX uncompressed stream (Gradients, UI, ColorCharts)
             for level in &mip_chain {
                 let mut bgra_data = Vec::with_capacity(level.width * level.height * 4);
                 for p in level.data.chunks_exact(4) {
@@ -458,13 +522,21 @@ impl ImageCompiler {
                 main_compressed_payload.extend_from_slice(&bgra_data);
             }
         } else {
-            // Desktop Block Compression (BC1..BC7 / CTX1)
             let (tf_format, is_signed) = map_engine_format_to_tf(dest_format);
-            let is_1bit_alpha =
-                dest_format == EPixelFormat::BC1a || self.props.maintain_alpha_coverage;
             let bytes_per_block = tf_format.bytes_per_block();
 
             let rdo_lambda = self.rdo_lambda.unwrap_or(0.0);
+
+            // BC7t alpha weighting
+            let weight_by_alpha = !is_normal_map
+                && !self.props.discard_alpha
+                && matches!(
+                    dest_format,
+                    EPixelFormat::BC2t
+                        | EPixelFormat::BC3t
+                        | EPixelFormat::BC7t
+                        | EPixelFormat::BC1a
+                );
 
             let compress_opts = CompressionOptions {
                 format: tf_format,
@@ -477,15 +549,7 @@ impl ImageCompiler {
                 },
                 strategy: FitStrategy::Cluster(8),
                 quality: self.quality,
-                weight_by_alpha: !is_normal_map
-                    && !self.props.discard_alpha
-                    && matches!(
-                        dest_format,
-                        EPixelFormat::BC2
-                            | EPixelFormat::BC3
-                            | EPixelFormat::BC7
-                            | EPixelFormat::BC7t
-                    ),
+                weight_by_alpha,
                 is_1bit_alpha,
                 alpha_iterative_fit: true,
                 is_signed,
@@ -892,23 +956,6 @@ impl ImageCompiler {
     }
 }
 
-fn map_engine_format_to_tf(fmt: EPixelFormat) -> (TfFormat, bool) {
-    match fmt {
-        EPixelFormat::BC1 => (TfFormat::Bc1, false),
-        EPixelFormat::BC1a => (TfFormat::Bc1, false),
-        EPixelFormat::BC2 | EPixelFormat::BC2t => (TfFormat::Bc2, false),
-        EPixelFormat::BC3 | EPixelFormat::BC3t => (TfFormat::Bc3, false),
-        EPixelFormat::BC4 => (TfFormat::Bc4, false),
-        EPixelFormat::BC4s => (TfFormat::Bc4, true),
-        EPixelFormat::BC5 => (TfFormat::Bc5, false),
-        EPixelFormat::BC5s => (TfFormat::Bc5, true),
-        EPixelFormat::BC6UH => (TfFormat::Bc6h, false),
-        EPixelFormat::BC7 | EPixelFormat::BC7t => (TfFormat::Bc7, false),
-        EPixelFormat::CTX1 => (TfFormat::Ctx1, false),
-        _ => (TfFormat::Bc7, false),
-    }
-}
-
 fn compress_single_block_dispatch(
     pixels: &[[u8; 4]; 16],
     mask: u16,
@@ -962,15 +1009,24 @@ fn compress_single_block_dispatch(
         }
         TfFormat::Bc5 => {
             let (blk_r, blk_g) = out_block.split_at_mut(8);
-            let mut reds = [0u8; 16];
-            let mut greens = [0u8; 16];
-            for i in 0..16 {
-                reds[i] = pixels[i][0];
-                greens[i] = pixels[i][1];
-            }
 
-            if opts.is_normal_map {
-                // Native CryEngine 3Dc / ATI2 normal map compression using spherical deviance
+            if opts.is_signed {
+                // BC5s: Map UNORM [0..255] (neutral 128) to SNORM i8 [-127..+127] (neutral 0)
+                let mut signed_r = [0i8; 16];
+                let mut signed_g = [0i8; 16];
+                for i in 0..16 {
+                    signed_r[i] = (pixels[i][0] as i32 - 128).clamp(-127, 127) as i8;
+                    signed_g[i] = (pixels[i][1] as i32 - 128).clamp(-127, 127) as i8;
+                }
+                compress_bc5_signed(&signed_r, &signed_g, mask, 0, out_block.try_into().unwrap());
+            } else if opts.is_normal_map {
+                // Unsigned BC5 (3Dc / ATI2): encode [0..255]
+                let mut reds = [0u8; 16];
+                let mut greens = [0u8; 16];
+                for i in 0..16 {
+                    reds[i] = pixels[i][0];
+                    greens[i] = pixels[i][1];
+                }
                 compress_bc5_normals(
                     &reds,
                     &greens,
@@ -979,15 +1035,13 @@ fn compress_single_block_dispatch(
                     blk_r.try_into().unwrap(),
                     blk_g.try_into().unwrap(),
                 );
-            } else if opts.is_signed {
-                let mut signed_r = [0i8; 16];
-                let mut signed_g = [0i8; 16];
-                for i in 0..16 {
-                    signed_r[i] = (pixels[i][0] as i32 - 128).clamp(-127, 127) as i8;
-                    signed_g[i] = (pixels[i][1] as i32 - 128).clamp(-127, 127) as i8;
-                }
-                compress_bc5_signed(&signed_r, &signed_g, mask, 0, out_block.try_into().unwrap());
             } else {
+                let mut reds = [0u8; 16];
+                let mut greens = [0u8; 16];
+                for i in 0..16 {
+                    reds[i] = pixels[i][0];
+                    greens[i] = pixels[i][1];
+                }
                 compress_bc5(&reds, &greens, mask, 1 << 15, out_block.try_into().unwrap());
             }
         }

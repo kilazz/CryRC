@@ -207,7 +207,7 @@ impl CPixelFormats {
                 min_height: 4,
                 block_width: 4,
                 block_height: 4,
-                dxgi_format: DxgiFormat::BC5Snorm, // Signed BC5 (DXGI_FORMAT_BC5_SNORM, 84)
+                dxgi_format: DxgiFormat::BC5Snorm,
                 name: "BC5s",
                 is_compressed: true,
             },
@@ -268,6 +268,27 @@ impl CPixelFormats {
             "BC7T" => Some(EPixelFormat::BC7t),
             "CTX1" => Some(EPixelFormat::CTX1),
             _ => None,
+        }
+    }
+
+    /// Emulates CryEngine logic for automatically upgrading or downgrading the format quality
+    /// based on the actual presence of an alpha channel.
+    pub fn get_final_pixel_format(requested: EPixelFormat, has_alpha: bool) -> EPixelFormat {
+        match (requested, has_alpha) {
+            // Format upgrade (alpha is present, but the preset specifies a format without alpha)
+            (EPixelFormat::X8R8G8B8, true) => EPixelFormat::A8R8G8B8,
+            (EPixelFormat::R8G8B8, true) => EPixelFormat::A8R8G8B8,
+            (EPixelFormat::BC1, true) => EPixelFormat::BC3, // DXT1 -> DXT5
+
+            // Format downgrading to save memory and time (there is effectively no alpha channel)
+            (EPixelFormat::A8R8G8B8, false) => EPixelFormat::X8R8G8B8,
+            (EPixelFormat::BC1a, false) => EPixelFormat::BC1,
+            (EPixelFormat::BC2, false) | (EPixelFormat::BC2t, false) => EPixelFormat::BC1,
+            (EPixelFormat::BC3, false) | (EPixelFormat::BC3t, false) => EPixelFormat::BC1,
+            (EPixelFormat::BC7t, false) => EPixelFormat::BC7, // Снимаем режим "t" (веса по альфе), оставляем BC7
+
+            // Otherwise, leave as requested
+            (fmt, _) => fmt,
         }
     }
 }

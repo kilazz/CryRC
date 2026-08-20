@@ -73,7 +73,9 @@ pub use flags::{ColorMetric, CompressionOptions, FitStrategy, Format, MipmapFilt
 // =============================================================================
 // CryEngine Image Structures & Compiler
 // =============================================================================
-pub use image_compiler::{ImageCompiler, LoadedSourceImage};
+pub use image_compiler::{
+    ImageCompiler, LoadedSourceImage, compute_max_mip_count, map_engine_format_to_tf,
+};
 pub use image_details::ImageDetails;
 pub use image_object::{
     EAlphaContent, ECubemap, EIF_ATTACHEDALPHA, EIF_CUBEMAP, EIF_DECAL, EIF_FILESINGLE,
@@ -102,7 +104,7 @@ pub use operations::normalize::RangeNormalizer;
 pub use pipeline::alpha::{demultiply_alpha, premultiply_alpha};
 pub use pipeline::dither::{dither_block_rgba, dither_image_rgba};
 pub use pipeline::metrics::{ImageMetrics, TrackedStat, compute_ssim};
-pub use pipeline::mipmaps::{AlphaCoverageOptions, generate_mipmaps_rgba};
+pub use pipeline::mipmaps::{AlphaCoverageOptions, MipLevel as MipmapLevel, generate_mipmaps_rgba};
 pub use pipeline::normalmap::{NormalMapOptions, compute_normal_map};
 pub use pipeline::rdo::{
     ReduceEntropyParams, apply_rdo_optimization, reduce_entropy, reduce_entropy_strided,

@@ -1,6 +1,10 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// High-Performance Parallel Mipmap Generation Engine with Separable 1D Kernels
+
 pub use crate::flags::MipmapFilter;
 use crate::math::vector::Vec4;
 use crate::tables::srgb::{linear_to_srgb, srgb_to_linear};
+use rayon::prelude::*;
 use std::f32::consts::PI;
 
 pub struct MipLevel {
@@ -14,7 +18,9 @@ pub struct AlphaCoverageOptions {
     pub alpha_cutoff: f32,
 }
 
-// --- Mathematical Filter Kernels ---
+// =============================================================================
+// Mathematical Filter Kernels
+// =============================================================================
 
 #[inline(always)]
 pub fn filter_sinc(x: f32) -> f32 {
@@ -98,6 +104,10 @@ pub fn filter_kaiser_sinc(x: f32) -> f32 {
     }
 }
 
+// =============================================================================
+// Top-Level Mipmap Generator
+// =============================================================================
+
 pub fn generate_mipmaps_rgba(
     src_rgba: &[u8],
     width: usize,
@@ -130,7 +140,7 @@ pub fn generate_mipmaps_rgba(
         let mut next_data = match filter {
             MipmapFilter::Point => downsample_point(&cur_data, cur_w, next_w, next_h),
             MipmapFilter::Box => downsample_box(&cur_data, cur_w, cur_h, next_w, next_h, srgb),
-            MipmapFilter::MitchellNetravali => downsample_separable_kernel(
+            MipmapFilter::MitchellNetravali => downsample_separable_fast(
                 &cur_data,
                 cur_w,
                 cur_h,
@@ -140,7 +150,7 @@ pub fn generate_mipmaps_rgba(
                 2.0,
                 filter_mitchell_netravali,
             ),
-            MipmapFilter::CatmullRom => downsample_separable_kernel(
+            MipmapFilter::CatmullRom => downsample_separable_fast(
                 &cur_data,
                 cur_w,
                 cur_h,
@@ -150,7 +160,7 @@ pub fn generate_mipmaps_rgba(
                 2.0,
                 filter_catmull_rom,
             ),
-            MipmapFilter::Lanczos3 => downsample_separable_kernel(
+            MipmapFilter::Lanczos3 => downsample_separable_fast(
                 &cur_data,
                 cur_w,
                 cur_h,
@@ -160,7 +170,7 @@ pub fn generate_mipmaps_rgba(
                 3.0,
                 filter_lanczos3,
             ),
-            MipmapFilter::KaiserSinc => downsample_separable_kernel(
+            MipmapFilter::KaiserSinc => downsample_separable_fast(
                 &cur_data,
                 cur_w,
                 cur_h,
@@ -198,51 +208,54 @@ pub fn generate_mipmaps_rgba(
 
 fn downsample_box(src: &[u8], sw: usize, sh: usize, dw: usize, dh: usize, srgb: bool) -> Vec<u8> {
     let mut dest = vec![0u8; dw * dh * 4];
-    for dy in 0..dh {
-        for dx in 0..dw {
-            let sx0 = dx * 2;
+
+    dest.par_chunks_exact_mut(dw * 4)
+        .enumerate()
+        .for_each(|(dy, row)| {
             let sy0 = dy * 2;
-            let sx1 = (sx0 + 1).min(sw - 1);
             let sy1 = (sy0 + 1).min(sh - 1);
 
-            let p00 = get_px(src, sw, sx0, sy0);
-            let p10 = get_px(src, sw, sx1, sy0);
-            let p01 = get_px(src, sw, sx0, sy1);
-            let p11 = get_px(src, sw, sx1, sy1);
+            for (dx, out_pixel) in row.chunks_exact_mut(4).enumerate() {
+                let sx0 = dx * 2;
+                let sx1 = (sx0 + 1).min(sw - 1);
 
-            let out_idx = (dy * dw + dx) * 4;
+                let p00 = get_px(src, sw, sx0, sy0);
+                let p10 = get_px(src, sw, sx1, sy0);
+                let p01 = get_px(src, sw, sx0, sy1);
+                let p11 = get_px(src, sw, sx1, sy1);
 
-            if srgb {
-                let r = (srgb_to_linear(p00[0])
-                    + srgb_to_linear(p10[0])
-                    + srgb_to_linear(p01[0])
-                    + srgb_to_linear(p11[0]))
-                    * 0.25;
-                let g = (srgb_to_linear(p00[1])
-                    + srgb_to_linear(p10[1])
-                    + srgb_to_linear(p01[1])
-                    + srgb_to_linear(p11[1]))
-                    * 0.25;
-                let b = (srgb_to_linear(p00[2])
-                    + srgb_to_linear(p10[2])
-                    + srgb_to_linear(p01[2])
-                    + srgb_to_linear(p11[2]))
-                    * 0.25;
-                let a = (p00[3] as u32 + p10[3] as u32 + p01[3] as u32 + p11[3] as u32 + 2) / 4;
+                if srgb {
+                    let r = (srgb_to_linear(p00[0])
+                        + srgb_to_linear(p10[0])
+                        + srgb_to_linear(p01[0])
+                        + srgb_to_linear(p11[0]))
+                        * 0.25;
+                    let g = (srgb_to_linear(p00[1])
+                        + srgb_to_linear(p10[1])
+                        + srgb_to_linear(p01[1])
+                        + srgb_to_linear(p11[1]))
+                        * 0.25;
+                    let b = (srgb_to_linear(p00[2])
+                        + srgb_to_linear(p10[2])
+                        + srgb_to_linear(p01[2])
+                        + srgb_to_linear(p11[2]))
+                        * 0.25;
+                    let a = (p00[3] as u32 + p10[3] as u32 + p01[3] as u32 + p11[3] as u32 + 2) / 4;
 
-                dest[out_idx] = linear_to_srgb(r);
-                dest[out_idx + 1] = linear_to_srgb(g);
-                dest[out_idx + 2] = linear_to_srgb(b);
-                dest[out_idx + 3] = a as u8;
-            } else {
-                for c in 0..4 {
-                    dest[out_idx + c] =
-                        ((p00[c] as u32 + p10[c] as u32 + p01[c] as u32 + p11[c] as u32 + 2) / 4)
-                            as u8;
+                    out_pixel[0] = linear_to_srgb(r);
+                    out_pixel[1] = linear_to_srgb(g);
+                    out_pixel[2] = linear_to_srgb(b);
+                    out_pixel[3] = a as u8;
+                } else {
+                    for c in 0..4 {
+                        out_pixel[c] =
+                            ((p00[c] as u32 + p10[c] as u32 + p01[c] as u32 + p11[c] as u32 + 2)
+                                / 4) as u8;
+                    }
                 }
             }
-        }
-    }
+        });
+
     dest
 }
 
@@ -260,8 +273,9 @@ fn downsample_point(src: &[u8], sw: usize, dw: usize, dh: usize) -> Vec<u8> {
     dest
 }
 
+/// Ultra-Fast 2-Pass Separable Downsampler (Horizontal 1D -> Vertical 1D) with Rayon Parallelism.
 #[allow(clippy::too_many_arguments)]
-fn downsample_separable_kernel<F>(
+fn downsample_separable_fast<F>(
     src: &[u8],
     sw: usize,
     sh: usize,
@@ -272,32 +286,28 @@ fn downsample_separable_kernel<F>(
     kernel: F,
 ) -> Vec<u8>
 where
-    F: Fn(f32) -> f32,
+    F: Fn(f32) -> f32 + Sync + Send,
 {
-    let mut dest = vec![0u8; dw * dh * 4];
     let taps = (radius * 2.0).ceil() as isize;
 
-    for dy in 0..dh {
-        let center_y = (dy as f32 + 0.5) * 2.0 - 0.5;
+    // --- PASS 1: Horizontal 1D Convolution (sw x sh -> dw x sh) ---
+    let mut temp = vec![Vec4::splat(0.0); dw * sh];
 
-        for dx in 0..dw {
-            let center_x = (dx as f32 + 0.5) * 2.0 - 0.5;
-            let mut accum = Vec4::splat(0.0);
-            let mut total_weight = 0.0f32;
-
-            for ky in -taps..=taps {
-                let sy =
-                    ((center_y + ky as f32).round() as isize).clamp(0, sh as isize - 1) as usize;
-                let wy = kernel(ky as f32 / radius);
+    temp.par_chunks_exact_mut(dw)
+        .enumerate()
+        .for_each(|(y, row_slice)| {
+            for (dx, out_pixel) in row_slice.iter_mut().enumerate() {
+                let center_x = (dx as f32 + 0.5) * (sw as f32 / dw as f32) - 0.5;
+                let mut accum = Vec4::splat(0.0);
+                let mut total_w = 0.0f32;
 
                 for kx in -taps..=taps {
                     let sx = ((center_x + kx as f32).round() as isize).clamp(0, sw as isize - 1)
                         as usize;
-                    let wx = kernel(kx as f32 / radius);
-                    let w = wx * wy;
+                    let w = kernel(kx as f32 / radius);
 
                     if w.abs() > 1e-6 {
-                        let p = get_px(src, sw, sx, sy);
+                        let p = get_px(src, sw, sx, y);
                         let sample = if srgb {
                             Vec4::new(
                                 srgb_to_linear(p[0]),
@@ -310,32 +320,61 @@ where
                         };
 
                         accum += sample * w;
-                        total_weight += w;
+                        total_w += w;
                     }
                 }
-            }
 
-            let inv_w = if total_weight.abs() > 1e-6 {
-                1.0 / total_weight
-            } else {
-                1.0
-            };
-            let result = accum * inv_w;
-            let out_idx = (dy * dw + dx) * 4;
-
-            if srgb {
-                dest[out_idx] = linear_to_srgb(result.x);
-                dest[out_idx + 1] = linear_to_srgb(result.y);
-                dest[out_idx + 2] = linear_to_srgb(result.z);
-                dest[out_idx + 3] = (result.w * 255.0).round().clamp(0.0, 255.0) as u8;
-            } else {
-                dest[out_idx] = result.x.round().clamp(0.0, 255.0) as u8;
-                dest[out_idx + 1] = result.y.round().clamp(0.0, 255.0) as u8;
-                dest[out_idx + 2] = result.z.round().clamp(0.0, 255.0) as u8;
-                dest[out_idx + 3] = result.w.round().clamp(0.0, 255.0) as u8;
+                *out_pixel = if total_w.abs() > 1e-6 {
+                    accum * (1.0 / total_w)
+                } else {
+                    accum
+                };
             }
-        }
-    }
+        });
+
+    // --- PASS 2: Vertical 1D Convolution (dw x sh -> dw x dh) ---
+    let mut dest = vec![0u8; dw * dh * 4];
+
+    dest.par_chunks_exact_mut(dw * 4)
+        .enumerate()
+        .for_each(|(dy, out_row)| {
+            let center_y = (dy as f32 + 0.5) * (sh as f32 / dh as f32) - 0.5;
+
+            for (dx, out_pixel) in out_row.chunks_exact_mut(4).enumerate() {
+                let mut accum = Vec4::splat(0.0);
+                let mut total_w = 0.0f32;
+
+                for ky in -taps..=taps {
+                    let sy = ((center_y + ky as f32).round() as isize).clamp(0, sh as isize - 1)
+                        as usize;
+                    let w = kernel(ky as f32 / radius);
+
+                    if w.abs() > 1e-6 {
+                        accum += temp[sy * dw + dx] * w;
+                        total_w += w;
+                    }
+                }
+
+                let result = if total_w.abs() > 1e-6 {
+                    accum * (1.0 / total_w)
+                } else {
+                    accum
+                };
+
+                if srgb {
+                    out_pixel[0] = linear_to_srgb(result.x);
+                    out_pixel[1] = linear_to_srgb(result.y);
+                    out_pixel[2] = linear_to_srgb(result.z);
+                    out_pixel[3] = (result.w * 255.0).round().clamp(0.0, 255.0) as u8;
+                } else {
+                    out_pixel[0] = result.x.round().clamp(0.0, 255.0) as u8;
+                    out_pixel[1] = result.y.round().clamp(0.0, 255.0) as u8;
+                    out_pixel[2] = result.z.round().clamp(0.0, 255.0) as u8;
+                    out_pixel[3] = result.w.round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        });
+
     dest
 }
 
@@ -350,14 +389,11 @@ pub fn calculate_alpha_coverage(rgba: &[u8], width: usize, height: usize, cutoff
         return 1.0;
     }
     let cutoff_u8 = (cutoff * 255.0).round().clamp(0.0, 255.0) as u8;
-    let mut count = 0usize;
     let total = width * height;
-
-    for i in 0..total {
-        if rgba[i * 4 + 3] >= cutoff_u8 {
-            count += 1;
-        }
-    }
+    let count = rgba
+        .par_chunks_exact(4)
+        .filter(|p| p[3] >= cutoff_u8)
+        .count();
     count as f32 / total as f32
 }
 
@@ -379,15 +415,12 @@ pub fn scale_alpha_for_coverage(
 
     for _ in 0..10 {
         let scale = (min_scale + max_scale) * 0.5;
-        let mut pass_count = 0usize;
         let cutoff_u8 = (cutoff * 255.0).round() as u32;
 
-        for &a in &original_alphas {
-            let scaled = ((a as f32 * scale).round().clamp(0.0, 255.0)) as u32;
-            if scaled >= cutoff_u8 {
-                pass_count += 1;
-            }
-        }
+        let pass_count = original_alphas
+            .iter()
+            .filter(|&&a| ((a as f32 * scale).round().clamp(0.0, 255.0) as u32) >= cutoff_u8)
+            .count();
 
         let coverage = pass_count as f32 / original_alphas.len() as f32;
         if coverage < target_coverage {
@@ -398,8 +431,10 @@ pub fn scale_alpha_for_coverage(
         best_scale = scale;
     }
 
-    for (i, px) in rgba.chunks_exact_mut(4).enumerate() {
-        let a = original_alphas[i] as f32 * best_scale;
-        px[3] = a.round().clamp(0.0, 255.0) as u8;
-    }
+    rgba.par_chunks_exact_mut(4)
+        .enumerate()
+        .for_each(|(i, px)| {
+            let a = original_alphas[i] as f32 * best_scale;
+            px[3] = a.round().clamp(0.0, 255.0) as u8;
+        });
 }

@@ -47,6 +47,25 @@ impl DdsIO {
             cry_flags |= 0x40000; // EIF_RenormalizedTexture
         }
 
+        // Determine if the primary image uses a DX10 header
+        let main_needs_dx10 = matches!(
+            dxgi_format,
+            DxgiFormat::BC1Unorm
+                | DxgiFormat::BC1UnormSrgb
+                | DxgiFormat::BC2Unorm
+                | DxgiFormat::BC2UnormSrgb
+                | DxgiFormat::BC3Unorm
+                | DxgiFormat::BC3UnormSrgb
+                | DxgiFormat::BC4Unorm
+                | DxgiFormat::BC4Snorm
+                | DxgiFormat::BC5Unorm
+                | DxgiFormat::BC5Snorm
+                | DxgiFormat::BC6HUf16
+                | DxgiFormat::BC6HSf16
+                | DxgiFormat::BC7Unorm
+                | DxgiFormat::BC7UnormSrgb
+        );
+
         // 2. Write primary DDS stream
         Self::write_single_dds_stream(
             &mut w,
@@ -56,6 +75,7 @@ impl DdsIO {
             dxgi_format,
             is_cubemap,
             cry_flags,
+            main_needs_dx10,
             main_payload,
         )?;
 
@@ -67,6 +87,8 @@ impl DdsIO {
             // Build full nested BC4 DDS container in memory
             let mut alpha_stream = Vec::new();
             let alpha_flags = cry_flags & (0x1 | 0x4); // Inherit cubemap and decal flags
+
+            // CRITICAL: If the main image is forced to DX10, the attached image MUST also be DX10!
             Self::write_single_dds_stream(
                 &mut alpha_stream,
                 width,
@@ -75,10 +97,11 @@ impl DdsIO {
                 DxgiFormat::BC4Unorm,
                 is_cubemap,
                 alpha_flags,
+                main_needs_dx10,
                 alpha_bytes,
             )?;
 
-            // Write size of attached stream followed by the nested DDS file
+            // Write size of attached stream followed by the nested DDS file itself
             w.write_u32::<LittleEndian>(alpha_stream.len() as u32)?;
             w.write_all(&alpha_stream)?;
             w.write_all(b"CEnd")?; // Marker for end of Crytek Extended data
@@ -100,6 +123,7 @@ impl DdsIO {
         dxgi_format: DxgiFormat,
         is_cubemap: bool,
         cry_flags: u32,
+        force_dx10: bool,
         payload: &[u8],
     ) -> io::Result<()> {
         let is_uncompressed = matches!(
@@ -151,37 +175,31 @@ impl DdsIO {
         w.write_u32::<LittleEndian>(0)?; // Depth
         w.write_u32::<LittleEndian>(mip_count)?;
 
-        // --- CryEngine dwReserved1 Layout (44 bytes = 11 DWORDs) ---
-        w.write_u32::<LittleEndian>(0x46595243)?; // dwReserved1[0] = 'CRYF'
-        w.write_u32::<LittleEndian>(cry_flags)?; // dwReserved1[1] = imageFlags
+        // --- CryEngine dwReserved1[11] Overlay (Offset 32..76, 44 bytes) ---
+        w.write_u32::<LittleEndian>(0x43525946)?; // dwTextureStage = MAKEFOURCC('F','Y','R','C')
+        w.write_u32::<LittleEndian>(cry_flags)?; // dwReserved1 = imageFlags
 
-        // dwReserved1[2] = [bNumPersistentMips, bCompressedBlockWidth, bCompressedBlockHeight, bReserved]
+        // bNumPersistentMips | (bCompressedBlockWidth << 8) | (bCompressedBlockHeight << 16)
         let block_dim: u8 = if is_uncompressed { 1 } else { 4 };
-        let packed_meta: u32 = ((block_dim as u32) << 8) | ((block_dim as u32) << 16);
+        let persistent_mips = mip_count.min(255);
+        let packed_meta: u32 =
+            persistent_mips | ((block_dim as u32) << 8) | ((block_dim as u32) << 16);
         w.write_u32::<LittleEndian>(packed_meta)?;
 
-        // dwReserved1[3..6] = cMinColor (Vec4 / ColorF: 0.0, 0.0, 0.0, 0.0)
+        // cMinColor (Vec4 / ColorF: 0.0, 0.0, 0.0, 0.0)
         w.write_f32::<LittleEndian>(0.0)?;
         w.write_f32::<LittleEndian>(0.0)?;
         w.write_f32::<LittleEndian>(0.0)?;
         w.write_f32::<LittleEndian>(0.0)?;
 
-        // dwReserved1[7..10] = cMaxColor (Vec4 / ColorF: 1.0, 1.0, 1.0, 1.0)
+        // cMaxColor (Vec4 / ColorF: 1.0, 1.0, 1.0, 1.0)
         w.write_f32::<LittleEndian>(1.0)?;
         w.write_f32::<LittleEndian>(1.0)?;
         w.write_f32::<LittleEndian>(1.0)?;
         w.write_f32::<LittleEndian>(1.0)?;
 
         // 3. DDS_PIXELFORMAT (32 bytes)
-        let needs_dx10_header = matches!(
-            dxgi_format,
-            DxgiFormat::BC6HUf16
-                | DxgiFormat::BC6HSf16
-                | DxgiFormat::BC7Unorm
-                | DxgiFormat::BC7UnormSrgb
-        );
-
-        if needs_dx10_header {
+        if force_dx10 {
             w.write_u32::<LittleEndian>(32)?;
             w.write_u32::<LittleEndian>(0x4)?; // DDPF_FOURCC
             w.write_all(b"DX10")?;
@@ -196,23 +214,22 @@ impl DdsIO {
                 DxgiFormat::B8G8R8X8Unorm | DxgiFormat::B8G8R8X8UnormSrgb
             );
             w.write_u32::<LittleEndian>(32)?;
-            w.write_u32::<LittleEndian>(if has_alpha { 0x41 } else { 0x40 })?; // DDPF_RGB | (has_alpha ? DDPF_ALPHAPIXELS : 0)
+            w.write_u32::<LittleEndian>(if has_alpha { 0x41 } else { 0x40 })?; // DDPF_RGB | DDPF_ALPHAPIXELS
             w.write_u32::<LittleEndian>(0)?;
             w.write_u32::<LittleEndian>(32)?;
-            w.write_u32::<LittleEndian>(0x00FF_0000)?;
-            w.write_u32::<LittleEndian>(0x0000_FF00)?;
-            w.write_u32::<LittleEndian>(0x0000_00FF)?;
-            w.write_u32::<LittleEndian>(if has_alpha { 0xFF00_0000 } else { 0 })?;
+            w.write_u32::<LittleEndian>(0x00FF_0000)?; // R mask
+            w.write_u32::<LittleEndian>(0x0000_FF00)?; // G mask
+            w.write_u32::<LittleEndian>(0x0000_00FF)?; // B mask
+            w.write_u32::<LittleEndian>(if has_alpha { 0xFF00_0000 } else { 0 })?; // A mask
         } else {
             let fourcc = match dxgi_format {
                 DxgiFormat::BC1Unorm | DxgiFormat::BC1UnormSrgb => *b"DXT1",
                 DxgiFormat::BC2Unorm | DxgiFormat::BC2UnormSrgb => *b"DXT3",
                 DxgiFormat::BC3Unorm | DxgiFormat::BC3UnormSrgb => *b"DXT5",
-                DxgiFormat::BC4Unorm | DxgiFormat::BC4Snorm => *b"ATI1",
-                DxgiFormat::BC5Unorm | DxgiFormat::BC5Snorm => *b"ATI2", // Native CryEngine 3Dc / BC5 FourCC
+                DxgiFormat::BC4Unorm => *b"ATI1",
+                DxgiFormat::BC5Unorm => *b"ATI2",
                 _ => *b"DXT1",
             };
-
             w.write_u32::<LittleEndian>(32)?;
             w.write_u32::<LittleEndian>(0x4)?; // DDPF_FOURCC
             w.write_all(&fourcc)?;
@@ -232,10 +249,10 @@ impl DdsIO {
         w.write_u32::<LittleEndian>(if is_cubemap { 0xFE00 } else { 0 })?; // DDSCAPS2_CUBEMAP | ALL_FACES
         w.write_u32::<LittleEndian>(0)?;
         w.write_u32::<LittleEndian>(0)?;
-        w.write_u32::<LittleEndian>(0)?; // dwReserved2
+        w.write_f32::<LittleEndian>(0.0)?; // dwReserved2 (fAvgBrightness)
 
-        // 4. Optional DDS_HEADER_DXT10 (20 bytes, only for BC6H / BC7)
-        if needs_dx10_header {
+        // 4. Optional DDS_HEADER_DXT10 (20 bytes)
+        if force_dx10 {
             w.write_u32::<LittleEndian>(dxgi_format as u32)?;
             w.write_u32::<LittleEndian>(3)?; // D3D10_RESOURCE_DIMENSION_TEXTURE2D
             w.write_u32::<LittleEndian>(if is_cubemap { 0x4 } else { 0 })?; // D3D10_RESOURCE_MISC_TEXTURECUBE
@@ -243,7 +260,7 @@ impl DdsIO {
             w.write_u32::<LittleEndian>(0)?;
         }
 
-        // 5. Texture payload
+        // 5. Data payload
         w.write_all(payload)?;
         Ok(())
     }
