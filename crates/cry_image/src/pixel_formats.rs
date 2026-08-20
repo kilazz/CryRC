@@ -1,3 +1,6 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// CryEngine Pixel Formats & Direct3D DXGI Format Mapping
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum DxgiFormat {
@@ -86,6 +89,30 @@ impl CPixelFormats {
                 block_height: 1,
                 dxgi_format: DxgiFormat::B8G8R8A8Unorm,
                 name: "A8R8G8B8",
+                is_compressed: false,
+            },
+            EPixelFormat::X8R8G8B8 => &PixelFormatInfo {
+                bytes_per_block: 4,
+                channels: 3,
+                has_alpha: false,
+                min_width: 1,
+                min_height: 1,
+                block_width: 1,
+                block_height: 1,
+                dxgi_format: DxgiFormat::B8G8R8X8Unorm,
+                name: "X8R8G8B8",
+                is_compressed: false,
+            },
+            EPixelFormat::R8G8B8 => &PixelFormatInfo {
+                bytes_per_block: 4,
+                channels: 3,
+                has_alpha: false,
+                min_width: 1,
+                min_height: 1,
+                block_width: 1,
+                block_height: 1,
+                dxgi_format: DxgiFormat::B8G8R8X8Unorm,
+                name: "R8G8B8",
                 is_compressed: false,
             },
             EPixelFormat::BC1 => &PixelFormatInfo {
@@ -180,7 +207,7 @@ impl CPixelFormats {
                 min_height: 4,
                 block_width: 4,
                 block_height: 4,
-                dxgi_format: DxgiFormat::BC5Snorm,
+                dxgi_format: DxgiFormat::BC5Snorm, // Signed BC5 (DXGI_FORMAT_BC5_SNORM, 84)
                 name: "BC5s",
                 is_compressed: true,
             },
@@ -227,6 +254,7 @@ impl CPixelFormats {
         match name.trim().to_ascii_uppercase().as_str() {
             "A8R8G8B8" | "ARGB8" | "RGBA8" => Some(EPixelFormat::A8R8G8B8),
             "X8R8G8B8" | "RGB8" | "RGBX8" => Some(EPixelFormat::X8R8G8B8),
+            "R8G8B8" => Some(EPixelFormat::R8G8B8),
             "DXT1" | "BC1" => Some(EPixelFormat::BC1),
             "DXT1A" | "BC1A" => Some(EPixelFormat::BC1a),
             "DXT3" | "BC2" => Some(EPixelFormat::BC2),
@@ -237,6 +265,7 @@ impl CPixelFormats {
             "BC5S" => Some(EPixelFormat::BC5s),
             "BC6UH" | "BC6H" => Some(EPixelFormat::BC6UH),
             "BC7" => Some(EPixelFormat::BC7),
+            "BC7T" => Some(EPixelFormat::BC7t),
             "CTX1" => Some(EPixelFormat::CTX1),
             _ => None,
         }

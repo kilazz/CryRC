@@ -432,108 +432,83 @@ impl ImageCompiler {
             );
         }
 
-        // 11. Desktop Block Compression (BC1..BC7 / CTX1)
-        let (tf_format, is_signed) = map_engine_format_to_tf(dest_format);
-        let is_1bit_alpha = dest_format == EPixelFormat::BC1a || self.props.maintain_alpha_coverage;
-        let bytes_per_block = tf_format.bytes_per_block();
-        let mut compressed_payload = Vec::new();
+        // 11. Uncompressed Formats vs Block Compression Pipeline
+        let is_uncompressed = matches!(
+            dest_format,
+            EPixelFormat::A8R8G8B8 | EPixelFormat::X8R8G8B8 | EPixelFormat::R8G8B8
+        );
 
-        let rdo_lambda = self.rdo_lambda.unwrap_or(0.0);
+        let mut main_compressed_payload = Vec::new();
+        let mut alpha_compressed_payload = Vec::new();
 
-        let compress_opts = CompressionOptions {
-            format: tf_format,
-            metric: if is_normal_map {
-                ColorMetric::Unit
-            } else if use_srgb {
-                ColorMetric::Perceptual
-            } else {
-                ColorMetric::Uniform
-            },
-            strategy: FitStrategy::Cluster(8),
-            quality: self.quality,
-            weight_by_alpha: !is_normal_map
-                && !self.props.discard_alpha
-                && matches!(
-                    dest_format,
-                    EPixelFormat::BC2 | EPixelFormat::BC3 | EPixelFormat::BC7 | EPixelFormat::BC7t
-                ),
-            is_1bit_alpha,
-            alpha_iterative_fit: true,
-            is_signed,
-            is_normal_map,
-            srgb: use_srgb,
-            dither_rgb: false,
-            dither_a: false,
-            rdo_lambda,
-            rdo_ultrasmooth: true,
-            rdo_lookback_window: 256,
-            rdo_try_two_matches: true,
-            rdo_smooth_block_scale: None,
-        };
-
-        // 1. Compress base BC5s / color blocks
-        for level in &mip_chain {
-            let bw = level.width.div_ceil(4);
-            let bh = level.height.div_ceil(4);
-            let mut level_blocks = vec![0u8; bw * bh * bytes_per_block];
-
-            for by in 0..bh {
-                for bx in 0..bw {
-                    let mut px_16 = [[0u8; 4]; 16];
-                    let mut mask = 0u16;
-
-                    for py in 0..4 {
-                        for px in 0..4 {
-                            let x = bx * 4 + px;
-                            let y = by * 4 + py;
-                            let idx = py * 4 + px;
-
-                            if x < level.width && y < level.height {
-                                let off = (y * level.width + x) * 4;
-                                px_16[idx] = [
-                                    level.data[off],
-                                    level.data[off + 1],
-                                    level.data[off + 2],
-                                    level.data[off + 3],
-                                ];
-                                mask |= 1 << idx;
-                            }
-                        }
-                    }
-
-                    let off = (by * bw + bx) * bytes_per_block;
-                    compress_single_block_dispatch(
-                        &px_16,
-                        mask,
-                        compress_opts,
-                        &mut level_blocks[off..off + bytes_per_block],
-                    );
+        if is_uncompressed {
+            // Direct BGRA / BGRX uncompressed stream (used for Gradients, UI, ColorCharts)
+            for level in &mip_chain {
+                let mut bgra_data = Vec::with_capacity(level.width * level.height * 4);
+                for p in level.data.chunks_exact(4) {
+                    bgra_data.push(p[2]); // B
+                    bgra_data.push(p[1]); // G
+                    bgra_data.push(p[0]); // R
+                    bgra_data.push(if dest_format == EPixelFormat::X8R8G8B8 {
+                        255
+                    } else {
+                        p[3]
+                    }); // A
                 }
+                main_compressed_payload.extend_from_slice(&bgra_data);
             }
+        } else {
+            // Desktop Block Compression (BC1..BC7 / CTX1)
+            let (tf_format, is_signed) = map_engine_format_to_tf(dest_format);
+            let is_1bit_alpha =
+                dest_format == EPixelFormat::BC1a || self.props.maintain_alpha_coverage;
+            let bytes_per_block = tf_format.bytes_per_block();
 
-            if compress_opts.rdo_lambda > 0.0 {
-                apply_rdo_optimization(
-                    &mut level_blocks,
-                    &level.data,
-                    level.width,
-                    level.height,
-                    &compress_opts,
-                );
-            }
+            let rdo_lambda = self.rdo_lambda.unwrap_or(0.0);
 
-            compressed_payload.extend_from_slice(&level_blocks);
-        }
+            let compress_opts = CompressionOptions {
+                format: tf_format,
+                metric: if is_normal_map {
+                    ColorMetric::Unit
+                } else if use_srgb {
+                    ColorMetric::Perceptual
+                } else {
+                    ColorMetric::Uniform
+                },
+                strategy: FitStrategy::Cluster(8),
+                quality: self.quality,
+                weight_by_alpha: !is_normal_map
+                    && !self.props.discard_alpha
+                    && matches!(
+                        dest_format,
+                        EPixelFormat::BC2
+                            | EPixelFormat::BC3
+                            | EPixelFormat::BC7
+                            | EPixelFormat::BC7t
+                    ),
+                is_1bit_alpha,
+                alpha_iterative_fit: true,
+                is_signed,
+                is_normal_map,
+                srgb: use_srgb,
+                dither_rgb: false,
+                dither_a: false,
+                rdo_lambda,
+                rdo_ultrasmooth: true,
+                rdo_lookback_window: 256,
+                rdo_try_two_matches: true,
+                rdo_smooth_block_scale: None,
+            };
 
-        // 2. Compress attached BC4 Alpha stream for _ddna
-        if has_attached_alpha {
+            // 1. Compress base BC5s / color blocks
             for level in &mip_chain {
                 let bw = level.width.div_ceil(4);
                 let bh = level.height.div_ceil(4);
-                let mut alpha_blocks = vec![0u8; bw * bh * 8];
+                let mut level_blocks = vec![0u8; bw * bh * bytes_per_block];
 
                 for by in 0..bh {
                     for bx in 0..bw {
-                        let mut alphas = [0u8; 16];
+                        let mut px_16 = [[0u8; 4]; 16];
                         let mut mask = 0u16;
 
                         for py in 0..4 {
@@ -544,23 +519,78 @@ impl ImageCompiler {
 
                                 if x < level.width && y < level.height {
                                     let off = (y * level.width + x) * 4;
-                                    alphas[idx] = level.data[off + 3];
+                                    px_16[idx] = [
+                                        level.data[off],
+                                        level.data[off + 1],
+                                        level.data[off + 2],
+                                        level.data[off + 3],
+                                    ];
                                     mask |= 1 << idx;
                                 }
                             }
                         }
 
-                        let off = (by * bw + bx) * 8;
-                        compress_bc4(
-                            &alphas,
+                        let off = (by * bw + bx) * bytes_per_block;
+                        compress_single_block_dispatch(
+                            &px_16,
                             mask,
-                            1 << 15,
-                            (&mut alpha_blocks[off..off + 8]).try_into().unwrap(),
+                            compress_opts,
+                            &mut level_blocks[off..off + bytes_per_block],
                         );
                     }
                 }
 
-                compressed_payload.extend_from_slice(&alpha_blocks);
+                if compress_opts.rdo_lambda > 0.0 {
+                    apply_rdo_optimization(
+                        &mut level_blocks,
+                        &level.data,
+                        level.width,
+                        level.height,
+                        &compress_opts,
+                    );
+                }
+
+                main_compressed_payload.extend_from_slice(&level_blocks);
+            }
+
+            // 2. Compress attached BC4 Alpha stream for _ddna
+            if has_attached_alpha {
+                for level in &mip_chain {
+                    let bw = level.width.div_ceil(4);
+                    let bh = level.height.div_ceil(4);
+                    let mut alpha_blocks = vec![0u8; bw * bh * 8];
+
+                    for by in 0..bh {
+                        for bx in 0..bw {
+                            let mut alphas = [0u8; 16];
+                            let mut mask = 0u16;
+
+                            for py in 0..4 {
+                                for px in 0..4 {
+                                    let x = bx * 4 + px;
+                                    let y = by * 4 + py;
+                                    let idx = py * 4 + px;
+
+                                    if x < level.width && y < level.height {
+                                        let off = (y * level.width + x) * 4;
+                                        alphas[idx] = level.data[off + 3];
+                                        mask |= 1 << idx;
+                                    }
+                                }
+                            }
+
+                            let off = (by * bw + bx) * 8;
+                            compress_bc4(
+                                &alphas,
+                                mask,
+                                1 << 15,
+                                (&mut alpha_blocks[off..off + 8]).try_into().unwrap(),
+                            );
+                        }
+                    }
+
+                    alpha_compressed_payload.extend_from_slice(&alpha_blocks);
+                }
             }
         }
 
@@ -576,7 +606,9 @@ impl ImageCompiler {
             };
         }
 
+        let is_file_single = filename.contains("_ddn") && !has_attached_alpha;
         let out_dds = output_path.with_extension("dds");
+
         DdsIO::save_dds_file(
             &out_dds,
             mip_chain[0].width as u32,
@@ -585,7 +617,15 @@ impl ImageCompiler {
             dxgi_format,
             use_srgb,
             self.is_cubemap,
-            &compressed_payload,
+            has_attached_alpha,
+            self.props.mip_renormalize,
+            is_file_single,
+            &main_compressed_payload,
+            if has_attached_alpha {
+                Some(&alpha_compressed_payload)
+            } else {
+                None
+            },
         )
         .map_err(|e| format!("Failed to write DDS: {}", e))?;
 
@@ -692,7 +732,11 @@ impl ImageCompiler {
             DxgiFormat::BC6HUf16,
             false,
             self.is_cubemap,
+            false,
+            false,
+            false,
             &compressed_payload,
+            None,
         )
         .map_err(|e| format!("Failed to write HDR DDS: {}", e))?;
 
@@ -746,7 +790,11 @@ impl ImageCompiler {
             DxgiFormat::R8G8B8A8Unorm,
             use_srgb,
             false,
+            false,
+            false,
+            false,
             &compressed_payload,
+            None,
         )
         .map_err(|e| format!("Failed to write mobile DDS: {}", e))?;
 
@@ -914,21 +962,15 @@ fn compress_single_block_dispatch(
         }
         TfFormat::Bc5 => {
             let (blk_r, blk_g) = out_block.split_at_mut(8);
-            if opts.is_signed {
-                let mut reds = [0i8; 16];
-                let mut greens = [0i8; 16];
-                for i in 0..16 {
-                    reds[i] = (pixels[i][0] as i32 - 128).clamp(-127, 127) as i8;
-                    greens[i] = (pixels[i][1] as i32 - 128).clamp(-127, 127) as i8;
-                }
-                compress_bc5_signed(&reds, &greens, mask, 0, out_block.try_into().unwrap());
-            } else if opts.is_normal_map {
-                let mut reds = [0u8; 16];
-                let mut greens = [0u8; 16];
-                for i in 0..16 {
-                    reds[i] = pixels[i][0];
-                    greens[i] = pixels[i][1];
-                }
+            let mut reds = [0u8; 16];
+            let mut greens = [0u8; 16];
+            for i in 0..16 {
+                reds[i] = pixels[i][0];
+                greens[i] = pixels[i][1];
+            }
+
+            if opts.is_normal_map {
+                // Native CryEngine 3Dc / ATI2 normal map compression using spherical deviance
                 compress_bc5_normals(
                     &reds,
                     &greens,
@@ -937,13 +979,15 @@ fn compress_single_block_dispatch(
                     blk_r.try_into().unwrap(),
                     blk_g.try_into().unwrap(),
                 );
-            } else {
-                let mut reds = [0u8; 16];
-                let mut greens = [0u8; 16];
+            } else if opts.is_signed {
+                let mut signed_r = [0i8; 16];
+                let mut signed_g = [0i8; 16];
                 for i in 0..16 {
-                    reds[i] = pixels[i][0];
-                    greens[i] = pixels[i][1];
+                    signed_r[i] = (pixels[i][0] as i32 - 128).clamp(-127, 127) as i8;
+                    signed_g[i] = (pixels[i][1] as i32 - 128).clamp(-127, 127) as i8;
                 }
+                compress_bc5_signed(&signed_r, &signed_g, mask, 0, out_block.try_into().unwrap());
+            } else {
                 compress_bc5(&reds, &greens, mask, 1 << 15, out_block.try_into().unwrap());
             }
         }
