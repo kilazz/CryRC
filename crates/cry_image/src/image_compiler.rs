@@ -6,7 +6,7 @@ use super::compressors::bc1::compress_bc1_block;
 use super::compressors::bc2::compress_alpha_bc2;
 use super::compressors::bc3::compress_alpha_bc3;
 use super::compressors::bc4::{compress_bc4, compress_bc4_signed};
-use super::compressors::bc5::{compress_bc5, compress_bc5_normals, compress_bc5_signed};
+use super::compressors::bc5::compress_bc5_normals;
 use super::compressors::bc6h::compress_bc6h_block;
 use super::compressors::bc7::compress_bc7_block;
 use super::compressors::ctx1::compress_ctx1_block;
@@ -42,7 +42,7 @@ pub struct LoadedSourceImage {
     pub hdr_pixels: Vec<Vec4>,
 }
 
-/// Helper function to strictly match CryEngine's mip count logic.
+/// Helper function to strictly match CryEngine's mip count logic
 pub fn compute_max_mip_count(width: usize, height: usize, is_compressed: bool) -> usize {
     let min_size = if is_compressed { 4 } else { 1 };
     let mut w = width;
@@ -370,7 +370,7 @@ impl ImageCompiler {
                 compute_normal_map(&heightmap, width, height, NormalMapOptions::default());
         }
 
-        // 5.5. Force alpha = 255 for opaque diffuse / discard alpha
+        // Force alpha = 255 for opaque diffuse / discard alpha
         let is_1bit_alpha = dest_format == EPixelFormat::BC1a || self.props.maintain_alpha_coverage;
         let is_bc1_opaque = dest_format == EPixelFormat::BC1 && !is_1bit_alpha;
 
@@ -1008,41 +1008,43 @@ fn compress_single_block_dispatch(
             }
         }
         TfFormat::Bc5 => {
-            let (blk_r, blk_g) = out_block.split_at_mut(8);
+            let (blk_0, blk_1) = out_block.split_at_mut(8);
 
             if opts.is_signed {
-                // BC5s: Map UNORM [0..255] (neutral 128) to SNORM i8 [-127..+127] (neutral 0)
-                let mut signed_r = [0i8; 16];
-                let mut signed_g = [0i8; 16];
+                // CryEngine BC5s: Block 0 = Y (Green), Block 1 = X (Red)
+                let mut signed_x = [0i8; 16];
+                let mut signed_y = [0i8; 16];
                 for i in 0..16 {
-                    signed_r[i] = (pixels[i][0] as i32 - 128).clamp(-127, 127) as i8;
-                    signed_g[i] = (pixels[i][1] as i32 - 128).clamp(-127, 127) as i8;
+                    signed_x[i] = (pixels[i][0] as i32 - 128).clamp(-127, 127) as i8;
+                    signed_y[i] = (pixels[i][1] as i32 - 128).clamp(-127, 127) as i8;
                 }
-                compress_bc5_signed(&signed_r, &signed_g, mask, 0, out_block.try_into().unwrap());
+                compress_bc4_signed(&signed_y, mask, 0, blk_0.try_into().unwrap());
+                compress_bc4_signed(&signed_x, mask, 0, blk_1.try_into().unwrap());
             } else if opts.is_normal_map {
-                // Unsigned BC5 (3Dc / ATI2): encode [0..255]
-                let mut reds = [0u8; 16];
-                let mut greens = [0u8; 16];
+                let mut reds_x = [0u8; 16];
+                let mut greens_y = [0u8; 16];
                 for i in 0..16 {
-                    reds[i] = pixels[i][0];
-                    greens[i] = pixels[i][1];
+                    reds_x[i] = pixels[i][0];
+                    greens_y[i] = pixels[i][1];
                 }
+                // Pass Y (Green) to Block 0 (blk_0) and X (Red) to Block 1 (blk_1)
                 compress_bc5_normals(
-                    &reds,
-                    &greens,
+                    &reds_x,
+                    &greens_y,
                     mask,
                     1 << 15,
-                    blk_r.try_into().unwrap(),
-                    blk_g.try_into().unwrap(),
+                    blk_0.try_into().unwrap(), // Block 0 = Y
+                    blk_1.try_into().unwrap(), // Block 1 = X
                 );
             } else {
-                let mut reds = [0u8; 16];
-                let mut greens = [0u8; 16];
+                let mut reds_x = [0u8; 16];
+                let mut greens_y = [0u8; 16];
                 for i in 0..16 {
-                    reds[i] = pixels[i][0];
-                    greens[i] = pixels[i][1];
+                    reds_x[i] = pixels[i][0];
+                    greens_y[i] = pixels[i][1];
                 }
-                compress_bc5(&reds, &greens, mask, 1 << 15, out_block.try_into().unwrap());
+                compress_bc4(&greens_y, mask, 1 << 15, blk_0.try_into().unwrap());
+                compress_bc4(&reds_x, mask, 1 << 15, blk_1.try_into().unwrap());
             }
         }
         TfFormat::Bc6h => {

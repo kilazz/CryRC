@@ -76,7 +76,7 @@ pub fn compress_block(
             }
         }
         Format::Bc5 => {
-            let (r_blk, g_blk) = out_block.split_at_mut(8);
+            let (y_blk, x_blk) = out_block.split_at_mut(8);
             if options.is_signed {
                 let mut r = [0i8; 16];
                 let mut g = [0i8; 16];
@@ -98,8 +98,8 @@ pub fn compress_block(
                         &g,
                         mask,
                         1 << 15,
-                        r_blk.try_into().unwrap(),
-                        g_blk.try_into().unwrap(),
+                        y_blk.try_into().unwrap(), // Block 0 = Y
+                        x_blk.try_into().unwrap(), // Block 1 = X
                     );
                 } else {
                     compress_bc5(&r, &g, mask, 1 << 15, out_block.try_into().unwrap());

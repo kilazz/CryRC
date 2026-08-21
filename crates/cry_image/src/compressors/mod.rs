@@ -21,7 +21,10 @@ pub use bc4::{
     compress_bc4, compress_bc4_i16, compress_bc4_signed, compress_bc4_u16, decompress_bc4,
 };
 pub use bc5::{
-    compress_bc5, compress_bc5_normals, compress_bc5_signed, decompress_bc5, decompress_bc5_normals,
+    compress_bc5, compress_bc5_i16, compress_bc5_normals, compress_bc5_normals_signed,
+    compress_bc5_signed, compress_bc5_u16, decompress_bc5, decompress_bc5_i16,
+    decompress_bc5_normals, decompress_bc5_normals_signed, decompress_bc5_signed,
+    decompress_bc5_u16,
 };
 pub use bc6h::{
     compress_bc6h_block, decompress_bc6h_block, float_to_half, half_to_float, sign_extend,

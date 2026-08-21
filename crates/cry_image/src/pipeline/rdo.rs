@@ -306,7 +306,6 @@ where
         let mut best_match_src_window_ofs = 0usize;
         let mut best_match_dst_block_ofs = 0usize;
 
-        // Tightened MSE threshold preventing destructive artifacts on dark blocks
         let thresh_ms_err = (cur_mse * 1.3).min(cur_mse + 2.0);
 
         if block_index > 0 {
@@ -636,26 +635,10 @@ pub fn apply_rdo_optimization(
             );
         }
         Format::Bc5 => {
+            // CryEngine BC5: Block 0 (offset 0..8) is Y (Green)
             reduce_entropy_strided(
                 compressed,
                 0,
-                16,
-                8,
-                &orig_blocks,
-                &params,
-                None,
-                |blk, out| {
-                    let mut r = [0u8; 16];
-                    decompress_bc4(blk.try_into().unwrap(), &mut r);
-                    for i in 0..16 {
-                        out[i] = [r[i], 0, 0, 255];
-                    }
-                    true
-                },
-            );
-            reduce_entropy_strided(
-                compressed,
-                8,
                 16,
                 8,
                 &orig_blocks,
@@ -666,6 +649,24 @@ pub fn apply_rdo_optimization(
                     decompress_bc4(blk.try_into().unwrap(), &mut g);
                     for i in 0..16 {
                         out[i] = [0, g[i], 0, 255];
+                    }
+                    true
+                },
+            );
+            // CryEngine BC5: Block 1 (offset 8..16) is X (Red)
+            reduce_entropy_strided(
+                compressed,
+                8,
+                16,
+                8,
+                &orig_blocks,
+                &params,
+                None,
+                |blk, out| {
+                    let mut r = [0u8; 16];
+                    decompress_bc4(blk.try_into().unwrap(), &mut r);
+                    for i in 0..16 {
+                        out[i] = [r[i], 0, 0, 255];
                     }
                     true
                 },

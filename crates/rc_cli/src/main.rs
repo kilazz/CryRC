@@ -206,6 +206,15 @@ pub struct CliArgs {
 
     #[arg(long = "overwriteextension", help = "Override output extension")]
     pub overwrite_extension: Option<String>,
+
+    #[arg(long = "quiet", help = "Suppress console output")]
+    pub quiet: Option<String>,
+
+    #[arg(long = "log", help = "Log file path")]
+    pub log: Option<String>,
+
+    #[arg(long = "createmtl", help = "Create default material")]
+    pub create_mtl: Option<String>,
 }
 
 #[derive(Default)]
@@ -244,7 +253,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Normalize CryEngine slash syntax (/key=value) into GNU format (--key=value) for clap
+    // Robust CryEngine slash syntax normalizer
     let mut normalized_args = Vec::with_capacity(raw_args.len());
     if let Some(exe_name) = raw_args.first() {
         normalized_args.push(exe_name.clone());
@@ -252,7 +261,28 @@ fn main() -> ExitCode {
 
     for arg in raw_args.iter().skip(1) {
         if let Some(stripped) = arg.strip_prefix('/') {
-            normalized_args.push(format!("--{}", stripped));
+            if let Some(pos) = stripped.find('=') {
+                let key = &stripped[..pos];
+                let val = &stripped[pos + 1..];
+
+                if key.eq_ignore_ascii_case("p") {
+                    normalized_args.push(format!("--platform={}", val));
+                } else if key.eq_ignore_ascii_case("refresh") {
+                    if val == "1" || val.eq_ignore_ascii_case("true") {
+                        normalized_args.push("--force".to_string());
+                    }
+                } else {
+                    normalized_args.push(format!("--{}={}", key, val));
+                }
+            } else {
+                if stripped.eq_ignore_ascii_case("refresh") {
+                    normalized_args.push("--force".to_string());
+                } else if stripped.eq_ignore_ascii_case("userdialog") {
+                    normalized_args.push("--userdialog=1".to_string());
+                } else {
+                    normalized_args.push(format!("--{}", stripped));
+                }
+            }
         } else {
             normalized_args.push(arg.clone());
         }
@@ -273,7 +303,12 @@ fn main() -> ExitCode {
             .build_global();
     }
 
-    if args.verbosity >= 1 {
+    let is_quiet = args.quiet.as_deref() == Some("1")
+        || raw_args
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case("/quiet") || a.starts_with("/quiet="));
+
+    if args.verbosity >= 1 && !is_quiet {
         println!("===============================================================================");
         println!("CryEngine Resource Compiler (Rust Modular v1.2.0)");
         println!("===============================================================================");
@@ -297,7 +332,7 @@ fn main() -> ExitCode {
     let mut ini_loaded = false;
     for ini_path in &ini_candidates {
         if ini_path.exists() && ini_file.load_from_file(ini_path).is_ok() {
-            if args.verbosity >= 1 {
+            if args.verbosity >= 1 && !is_quiet {
                 println!("[RC] Loaded configuration from {:?}", ini_path);
             }
             ini_loaded = true;
@@ -305,7 +340,7 @@ fn main() -> ExitCode {
         }
     }
 
-    if !ini_loaded && args.verbosity >= 1 {
+    if !ini_loaded && args.verbosity >= 1 && !is_quiet {
         println!("[RC WARNING] No rc.ini found, using default engine presets.");
     }
 
@@ -369,7 +404,6 @@ fn main() -> ExitCode {
 
     // 4. Batch Job XML Script Mode (/job=Job.xml)
     if let Some(ref job_file) = args.job {
-        println!("[RC] Executing Job XML script: {:?}", job_file);
         let mut initial_props = PropertyVars::new();
         initial_props.set_property("Platform", &args.platform);
         if let Some(ref sr) = args.source_root {
@@ -388,11 +422,13 @@ fn main() -> ExitCode {
                     args.verbosity,
                 ) {
                     Ok(count) => {
-                        println!(
-                            "[RC] Finished Job XML script in {:.2?}. Processed {} items.",
-                            start_time.elapsed(),
-                            count
-                        );
+                        if !is_quiet {
+                            println!(
+                                "[RC] Finished Job XML script in {:.2?}. Processed {} items.",
+                                start_time.elapsed(),
+                                count
+                            );
+                        }
                         return ExitCode::SUCCESS;
                     }
                     Err(e) => {
@@ -412,7 +448,7 @@ fn main() -> ExitCode {
     let files_to_process = collect_all_inputs(&args);
     if files_to_process.is_empty() {
         eprintln!(
-            "[RC ERROR] No matching input files found at path: {:?}. (Use /job=Job.xml for batch scripts)",
+            "[RC ERROR] No matching input files found at path: {:?}",
             args.source
         );
         return ExitCode::FAILURE;
@@ -451,7 +487,7 @@ fn main() -> ExitCode {
     ) {
         Ok(ProcessStatus::Compiled(out_paths)) => {
             stats.compiled_files.fetch_add(1, Ordering::Relaxed);
-            if args.verbosity >= 1 {
+            if args.verbosity >= 1 && !is_quiet {
                 for path in &out_paths {
                     println!(
                         "[RC OK] Compiled: {} -> {}",
@@ -479,12 +515,12 @@ fn main() -> ExitCode {
         }
         Ok(ProcessStatus::SkippedUpToDate) => {
             stats.skipped_files.fetch_add(1, Ordering::Relaxed);
-            if args.verbosity >= 2 {
+            if args.verbosity >= 2 && !is_quiet {
                 println!("[RC SKIP] Up-to-date: {}", input_file.display());
             }
         }
         Ok(ProcessStatus::UnsupportedExtension) => {
-            if args.verbosity >= 2 {
+            if args.verbosity >= 2 && !is_quiet {
                 println!(
                     "[RC IGNORE] Unsupported asset format: {}",
                     input_file.display()
@@ -502,12 +538,10 @@ fn main() -> ExitCode {
     };
 
     if is_interactive {
-        // Interactive UI dialogs must strictly run on the main OS thread
         for input_file in &files_to_process {
             process_file_item(input_file);
         }
     } else {
-        // Multi-threaded batch compilation via Rayon
         files_to_process.par_iter().for_each(process_file_item);
     }
 
@@ -539,30 +573,28 @@ fn main() -> ExitCode {
             })
             .collect();
 
-        if let Err(e) = PakWriter::create_pak(
+        let _ = PakWriter::create_pak(
             pak_path,
             &files_to_pack,
             args.zip_alignment,
             args.zip_encrypt,
             encryption_key.as_ref(),
-        ) {
-            eprintln!(
-                "[RC ERROR] Failed to create PAK archive {:?}: {}",
-                pak_path, e
-            );
-        }
+        );
     }
 
-    let duration = start_time.elapsed();
     let compiled = stats.compiled_files.load(Ordering::Relaxed);
     let skipped = stats.skipped_files.load(Ordering::Relaxed);
     let failed = stats.failed_files.load(Ordering::Relaxed);
 
-    if args.verbosity >= 1 {
+    if args.verbosity >= 1 && !is_quiet {
         println!("-------------------------------------------------------------------------------");
         println!(
             "RC Finished in {:.2?}. Total: {}, Compiled: {}, Up-to-date: {}, Failed: {}",
-            duration, stats.total_files, compiled, skipped, failed
+            start_time.elapsed(),
+            stats.total_files,
+            compiled,
+            skipped,
+            failed
         );
         println!("===============================================================================");
     }
@@ -616,7 +648,6 @@ fn process_single_file(
                 || a == "--userdialog"
         });
 
-    // Never skip if the interactive settings dialog is requested
     if !args.force && !is_user_dialog && is_file_up_to_date(input_file, &output_file) {
         return Ok(ProcessStatus::SkippedUpToDate);
     }
@@ -781,7 +812,6 @@ fn process_single_file(
                 return Ok(ProcessStatus::Compiled(vec![output_file]));
             }
 
-            // Headless / Batch Compilation Mode
             let img_props = ImageProperties {
                 input_color_space: cry_image::EInputColorSpace::Linear,
                 ..Default::default()
@@ -844,16 +874,16 @@ fn resolve_output_path(input_file: &Path, args: &CliArgs, ext: &str) -> Result<P
 
     if let Some(ref target) = args.output {
         if target.is_dir() || target.extension().is_none() {
-            let file_stem = if let Some(ref over_name) = args.overwrite_filename {
-                Path::new(over_name)
-                    .file_stem()
-                    .ok_or_else(|| "Invalid overwrite filename stem".to_string())?
+            let rel_subpath = if let Some(ref src_root) = args.source_root {
+                input_file.strip_prefix(src_root).unwrap_or(input_file)
             } else {
                 input_file
-                    .file_stem()
-                    .ok_or_else(|| "Invalid input file stem".to_string())?
             };
-            let mut out = target.join(file_stem);
+
+            let mut out = target.join(rel_subpath);
+            if let Some(ref over_name) = args.overwrite_filename {
+                out.set_file_name(over_name);
+            }
             out.set_extension(target_ext);
             Ok(out)
         } else {

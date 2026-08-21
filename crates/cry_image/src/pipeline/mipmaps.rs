@@ -1,5 +1,6 @@
 // Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
-// High-Performance Parallel Mipmap Generation Engine with Separable 1D Kernels
+// High-Performance Parallel Mipmap Generation Engine
+// Features: Separable 1D Kernels, Alpha Coverage Preservation, and Shader-Based Unsharp Masking
 
 pub use crate::flags::MipmapFilter;
 use crate::math::vector::Vec4;
@@ -7,6 +8,7 @@ use crate::tables::srgb::{linear_to_srgb, srgb_to_linear};
 use rayon::prelude::*;
 use std::f32::consts::PI;
 
+#[derive(Debug, Clone)]
 pub struct MipLevel {
     pub width: usize,
     pub height: usize,
@@ -104,6 +106,66 @@ pub fn filter_kaiser_sinc(x: f32) -> f32 {
     }
 }
 
+/// Gaussian filter adapted from Mitsuba Physically Based Renderer.
+/// Features a negative offset to guarantee smooth truncation at the window radius.
+#[inline(always)]
+pub fn filter_gaussian(x: f32) -> f32 {
+    let alpha = 2.0f32; // Explicit f32 type
+    let radius = 2.0f32; // Explicit f32 type
+    let offset = (-alpha * radius * radius).exp();
+    ((-alpha * x * x).exp() - offset).max(0.0)
+}
+
+// =============================================================================
+// Post-Process Mipmap Sharpening (Unsharp Masking for Trilinear Compensation)
+// =============================================================================
+
+/// Applies Unsharp Masking to the generated mip level to combat hardware trilinear blur.
+/// Only applies to RGB channels to prevent coverage artifacts in the Alpha channel.
+pub fn apply_mip_sharpening(data: &mut [u8], width: usize, height: usize, amount: f32) {
+    if amount <= 0.0 || width < 3 || height < 3 {
+        return;
+    }
+
+    let original = data.to_vec();
+    let strength = amount.clamp(0.0, 2.0);
+
+    // Unsharp mask Laplacian kernel cross:
+    //  0 -1  0
+    // -1  5 -1
+    //  0 -1  0
+
+    data.par_chunks_exact_mut(width * 4)
+        .enumerate()
+        .for_each(|(y, row_out)| {
+            // Skip boundaries
+            if y == 0 || y == height - 1 {
+                return;
+            }
+
+            for x in 1..(width - 1) {
+                let out_idx = x * 4;
+
+                // Sharpen only R, G, B channels
+                for c in 0..3 {
+                    let center = original[(y * width + x) * 4 + c] as f32;
+                    let top = original[((y - 1) * width + x) * 4 + c] as f32;
+                    let bottom = original[((y + 1) * width + x) * 4 + c] as f32;
+                    let left = original[(y * width + (x - 1)) * 4 + c] as f32;
+                    let right = original[(y * width + (x + 1)) * 4 + c] as f32;
+
+                    // Compute cross blur
+                    let blur = (top + bottom + left + right) * 0.25;
+
+                    // Unsharp Mask: Original + (Original - Blurred) * Strength
+                    let sharpened = center + (center - blur) * strength;
+
+                    row_out[out_idx + c] = sharpened.round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        });
+}
+
 // =============================================================================
 // Top-Level Mipmap Generator
 // =============================================================================
@@ -182,6 +244,15 @@ pub fn generate_mipmaps_rgba(
             ),
         };
 
+        // Apply Unsharp Masking mapped to the filter's characteristic
+        match filter {
+            MipmapFilter::Lanczos3 => apply_mip_sharpening(&mut next_data, next_w, next_h, 0.4),
+            MipmapFilter::CatmullRom => apply_mip_sharpening(&mut next_data, next_w, next_h, 0.25),
+            MipmapFilter::KaiserSinc => apply_mip_sharpening(&mut next_data, next_w, next_h, 0.15),
+            _ => {}
+        }
+
+        // Apply Alpha Coverage Preservation dynamically
         if let Some(opts) = alpha_coverage {
             scale_alpha_for_coverage(
                 &mut next_data,

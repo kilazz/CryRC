@@ -1,12 +1,17 @@
+// Copyright 2001-2026 Crytek GmbH / Crytek Group. All rights reserved.
+// BC5 / 3Dc+ / ATI2 Dual-Channel Block Compressor
+// CryEngine Native Layout: Block 0 = Y (Green), Block 1 = X (Red)
+
 use crate::compressors::bc3::write_alpha_block_bc3;
 use crate::compressors::bc4::*;
 use crate::math::normal::{DEVIANCE_MAX, complement_z};
 use crate::math::vector::Vec3;
 
 pub fn compress_bc5(red: &[u8; 16], green: &[u8; 16], mask: u16, flags: u32, block: &mut [u8; 16]) {
-    let (block_r, block_g) = block.split_at_mut(8);
-    compress_bc4(red, mask, flags, block_r.try_into().unwrap());
-    compress_bc4(green, mask, flags, block_g.try_into().unwrap());
+    let (block_y, block_x) = block.split_at_mut(8);
+    // CryEngine ATI2 / BC5 format: Block 0 = Y (Green), Block 1 = X (Red)
+    compress_bc4(green, mask, flags, block_y.try_into().unwrap());
+    compress_bc4(red, mask, flags, block_x.try_into().unwrap());
 }
 
 pub fn compress_bc5_signed(
@@ -16,21 +21,22 @@ pub fn compress_bc5_signed(
     flags: u32,
     block: &mut [u8; 16],
 ) {
-    let (block_r, block_g) = block.split_at_mut(8);
-    compress_bc4_signed(red, mask, flags, block_r.try_into().unwrap());
-    compress_bc4_signed(green, mask, flags, block_g.try_into().unwrap());
+    let (block_y, block_x) = block.split_at_mut(8);
+    // CryEngine BC5S format: Block 0 = Y (Green), Block 1 = X (Red)
+    compress_bc4_signed(green, mask, flags, block_y.try_into().unwrap());
+    compress_bc4_signed(red, mask, flags, block_x.try_into().unwrap());
 }
 
 pub fn compress_bc5_u16(red: &[u16; 16], green: &[u16; 16], mask: u16, block: &mut [u8; 16]) {
-    let (block_r, block_g) = block.split_at_mut(8);
-    compress_bc4_u16(red, mask, block_r.try_into().unwrap());
-    compress_bc4_u16(green, mask, block_g.try_into().unwrap());
+    let (block_y, block_x) = block.split_at_mut(8);
+    compress_bc4_u16(green, mask, block_y.try_into().unwrap());
+    compress_bc4_u16(red, mask, block_x.try_into().unwrap());
 }
 
 pub fn compress_bc5_i16(red: &[i16; 16], green: &[i16; 16], mask: u16, block: &mut [u8; 16]) {
-    let (block_r, block_g) = block.split_at_mut(8);
-    compress_bc4_i16(red, mask, block_r.try_into().unwrap());
-    compress_bc4_i16(green, mask, block_g.try_into().unwrap());
+    let (block_y, block_x) = block.split_at_mut(8);
+    compress_bc4_i16(green, mask, block_y.try_into().unwrap());
+    compress_bc4_i16(red, mask, block_x.try_into().unwrap());
 }
 
 pub fn compress_bc5_normals(
@@ -38,8 +44,8 @@ pub fn compress_bc5_normals(
     green: &[u8; 16],
     mask: u16,
     _flags: u32,
-    block_x: &mut [u8; 8],
-    block_y: &mut [u8; 8],
+    block_y: &mut [u8; 8], // Block 0 = Y (Green)
+    block_x: &mut [u8; 8], // Block 1 = X (Red)
 ) {
     let mut min_x = 255u8;
     let mut max_x = 0u8;
@@ -92,8 +98,8 @@ pub fn compress_bc5_normals(
         ind_y[i] = best_y;
     }
 
-    write_alpha_block_bc3(max_x, min_x, &ind_x, block_x);
-    write_alpha_block_bc3(max_y, min_y, &ind_y, block_y);
+    write_alpha_block_bc3(max_y, min_y, &ind_y, block_y); // Block 0 = Y
+    write_alpha_block_bc3(max_x, min_x, &ind_x, block_x); // Block 1 = X
 }
 
 pub fn compress_bc5_normals_signed(
@@ -101,26 +107,26 @@ pub fn compress_bc5_normals_signed(
     green: &[i8; 16],
     mask: u16,
     flags: u32,
-    block_x: &mut [u8; 8],
-    block_y: &mut [u8; 8],
+    block_y: &mut [u8; 8], // Block 0 = Y (Green)
+    block_x: &mut [u8; 8], // Block 1 = X (Red)
 ) {
-    compress_bc4_signed(red, mask, flags, block_x);
     compress_bc4_signed(green, mask, flags, block_y);
+    compress_bc4_signed(red, mask, flags, block_x);
 }
 
 pub fn decompress_bc5(block: &[u8; 16], out_red: &mut [u8; 16], out_green: &mut [u8; 16]) {
-    let (block_r, block_g) = block.split_at(8);
-    decompress_bc4(block_r.try_into().unwrap(), out_red);
-    decompress_bc4(block_g.try_into().unwrap(), out_green);
+    let (block_y, block_x) = block.split_at(8);
+    decompress_bc4(block_x.try_into().unwrap(), out_red);
+    decompress_bc4(block_y.try_into().unwrap(), out_green);
 }
 
 pub fn decompress_bc5_signed(block: &[u8; 16], out_red: &mut [i8; 16], out_green: &mut [i8; 16]) {
-    let (block_r, block_g) = block.split_at(8);
-    decompress_bc4_signed(block_r.try_into().unwrap(), out_red);
-    decompress_bc4_signed(block_g.try_into().unwrap(), out_green);
+    let (block_y, block_x) = block.split_at(8);
+    decompress_bc4_signed(block_x.try_into().unwrap(), out_red);
+    decompress_bc4_signed(block_y.try_into().unwrap(), out_green);
 }
 
-pub fn decompress_bc5_normals(block_x: &[u8; 8], block_y: &[u8; 8], out_xyzd: &mut [[u8; 4]; 16]) {
+pub fn decompress_bc5_normals(block_y: &[u8; 8], block_x: &[u8; 8], out_xyzd: &mut [[u8; 4]; 16]) {
     let mut red = [0u8; 16];
     let mut green = [0u8; 16];
     decompress_bc4(block_x, &mut red);
@@ -141,9 +147,9 @@ pub fn decompress_bc5_normals(block_x: &[u8; 8], block_y: &[u8; 8], out_xyzd: &m
 }
 
 pub fn decompress_bc5_normals_signed(
-    block_x: &[u8; 8],
     block_y: &[u8; 8],
-    out_xyzd: &mut [[f32; 4]; 16],
+    block_x: &[u8; 8],
+    out_xyzd: &mut [[u8; 4]; 16],
 ) {
     let mut red = [0i8; 16];
     let mut green = [0i8; 16];
@@ -151,21 +157,27 @@ pub fn decompress_bc5_normals_signed(
     decompress_bc4_signed(block_y, &mut green);
 
     for i in 0..16 {
-        let x = (red[i] as f32 / 127.0).clamp(-1.0, 1.0);
-        let y = (green[i] as f32 / 127.0).clamp(-1.0, 1.0);
+        let x = (red[i] as f32) / 127.0;
+        let y = (green[i] as f32) / 127.0;
         let normal = complement_z(Vec3::new(x, y, 0.0));
-        out_xyzd[i] = [normal.x, normal.y, normal.z, 1.0];
+
+        out_xyzd[i] = [
+            ((x * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8,
+            ((y * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8,
+            ((normal.z * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8,
+            255,
+        ];
     }
 }
 
 pub fn decompress_bc5_u16(block: &[u8; 16], out_red: &mut [u16; 16], out_green: &mut [u16; 16]) {
-    let (block_r, block_g) = block.split_at(8);
-    decompress_bc4_u16(block_r.try_into().unwrap(), out_red);
-    decompress_bc4_u16(block_g.try_into().unwrap(), out_green);
+    let (block_y, block_x) = block.split_at(8);
+    decompress_bc4_u16(block_x.try_into().unwrap(), out_red);
+    decompress_bc4_u16(block_y.try_into().unwrap(), out_green);
 }
 
 pub fn decompress_bc5_i16(block: &[u8; 16], out_red: &mut [i16; 16], out_green: &mut [i16; 16]) {
-    let (block_r, block_g) = block.split_at(8);
-    decompress_bc4_i16(block_r.try_into().unwrap(), out_red);
-    decompress_bc4_i16(block_g.try_into().unwrap(), out_green);
+    let (block_y, block_x) = block.split_at(8);
+    decompress_bc4_i16(block_x.try_into().unwrap(), out_red);
+    decompress_bc4_i16(block_y.try_into().unwrap(), out_green);
 }
